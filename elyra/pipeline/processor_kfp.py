@@ -31,6 +31,7 @@ from elyra.util.path import get_absolute_path
 from jinja2 import Environment, PackageLoader
 from kfp_notebook.pipeline import NotebookOp
 from kfp_server_api.exceptions import ApiException
+import kfp.gcp as gcp
 from urllib3.exceptions import LocationValueError, MaxRetryError
 
 
@@ -421,6 +422,9 @@ class KfpPipelineProcessor(RuntimePipelineProcess):
                                                             '{}/mlpipeline-ui-metadata.json'
                                                             .format(pipeline_envs['ELYRA_WRITABLE_CONTAINER_DIR'])
                                                     })
+            
+            ## FIX right now were adding the gcp sa secret to all operations by default, should control it with some sort of flag
+            notebook_ops[operation.id].apply(gcp.use_gcp_secret('kfp-gcp-bq-account'))
 
             image_namespace = self._get_metadata_configuration(namespace=MetadataManager.NAMESPACE_RUNTIME_IMAGES)
             for image_instance in image_namespace:
