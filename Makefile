@@ -14,17 +14,16 @@
 # limitations under the License.
 #
 
-.PHONY: help purge install uninstall clean test-dependencies lint-server lint-ui lint yarn-install
-.PHONY: build-ui build-server install-server
-.PHONY: watch test-server test-ui test-ui-debug test docs-dependencies docs dist-ui release
-.PHONY: validate-runtime-images elyra-image publish-elyra-image kf-notebook-image
-.PHONY: publish-kf-notebook-image airflow-image publish-airflow-image container-images publish-container-images
+.PHONY: help purge uninstall clean test-dependencies lint-server lint-ui lint yarn-install build-ui build-server install-server
+.PHONY: install watch test-server test-ui test-ui-debug test docs-dependencies docs dist-ui release
+.PHONY: elyra-image publish-elyra-image kf-notebook-image publish-kf-notebook-image airflow-image publish-airflow-image
+.PHONY: validate-runtime-images
 
 SHELL:=/bin/bash
 
-AIRFLOW_NOTEBOOK_VERSION:=0.0.5
+AIRFLOW_NOTEBOOK_VERSION:=0.0.7
 
-TAG:=dev
+TAG:=2.2.4
 ELYRA_IMAGE=elyra/elyra:$(TAG)
 ELYRA_AIRFLOW_IMAGE=elyra/airflow:$(TAG)
 KF_NOTEBOOK_IMAGE=elyra/kf-notebook:$(TAG)
@@ -156,40 +155,35 @@ dist-ui: build-ui
 
 release: dist-ui build-server ## Build wheel file for release
 
-elyra-image:
-	## Build Elyra stand-alone container image
+elyra-image: # Build container image
 	@mkdir -p build/docker
 	cp etc/docker/elyra/Dockerfile build/docker/Dockerfile
 	cp etc/docker/elyra/start-elyra.sh build/docker/start-elyra.sh
 	DOCKER_BUILDKIT=1 docker build -t docker.io/$(ELYRA_IMAGE) -t quay.io/$(ELYRA_IMAGE) build/docker/ --progress plain
 
-publish-elyra-image: elyra-image
-	## Publish Elyra stand-alone container image
-      # this is a privileged operation; a `docker login` might be required
+
+publish-elyra-image: elyra-image # Publish container image
+    # this is a privileged operation; a `docker login` might be required
 	docker push docker.io/$(ELYRA_IMAGE)
 	docker push quay.io/$(ELYRA_IMAGE)
 
-airflow-image:
-	## Build airflow image for use with Elyra
+airflow-image: # Build airflow image for use with Elyra
 	DOCKER_BUILDKIT=1 docker build -t docker.io/$(ELYRA_AIRFLOW_IMAGE) -t quay.io/$(ELYRA_AIRFLOW_IMAGE) \
 	--build-arg AIRFLOW_NOTEBOOK_VERSION=$(AIRFLOW_NOTEBOOK_VERSION) etc/docker/airflow/ --progress plain
 
-publish-airflow-image: airflow-image
-	## Publish airflow image for use with Elyra
+publish-airflow-image: airflow-image # Publish airflow image for use with Elyra
 	# this is a privileged operation; a `docker login` might be required
 	docker push docker.io/$(ELYRA_AIRFLOW_IMAGE)
 	docker push quay.io/$(ELYRA_AIRFLOW_IMAGE)
 
-kf-notebook-image:
-	## Build elyra image for use with Kubeflow Notebook Server
-	DOCKER_BUILDKIT=1 docker build -t docker.io/$(KF_NOTEBOOK_IMAGE) -t quay.io/$(KF_NOTEBOOK_IMAGE) \
-	etc/docker/kubeflow/ --progress plain
-
-publish-kf-notebook-image: kf-notebook-image
-	## Publish elyra image for use with Kubeflow Notebook Server
+publish-kf-notebook-image: kf-notebook-image # Publish elyra image for use with Kubeflow Notebook Server
 	# this is a privileged operation; a `docker login` might be required
 	docker push docker.io/$(KF_NOTEBOOK_IMAGE)
 	docker push quay.io/$(KF_NOTEBOOK_IMAGE)
+
+kf-notebook-image: # Build elyra image for use with Kubeflow Notebook Server
+	DOCKER_BUILDKIT=1 docker build -t docker.io/$(KF_NOTEBOOK_IMAGE) -t quay.io/$(KF_NOTEBOOK_IMAGE) \
+	etc/docker/kubeflow/ --progress plain
 
 container-images: elyra-image kf-notebook-image airflow-image ## Build all container images
 	docker images $(ELYRA_IMAGE)
@@ -200,7 +194,6 @@ container-images: elyra-image kf-notebook-image airflow-image ## Build all conta
 	docker images quay.io/$(ELYRA_AIRFLOW_IMAGE)
 
 publish-container-images: publish-elyra-image publish-airflow-image publish-kf-notebook-image ## Publish all container images
-
 
 validate-runtime-images: ## Validates delivered runtime-images meet minimum criteria
 	@required_commands=$(REQUIRED_RUNTIME_IMAGE_COMMANDS) ; \

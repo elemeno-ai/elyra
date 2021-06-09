@@ -14,8 +14,6 @@
 # limitations under the License.
 #
 import autopep8
-import kfp
-import kfp_tekton
 import os
 import re
 import tempfile
@@ -23,12 +21,17 @@ import time
 import requests
 import json
 
+from black import format_str, FileMode
 from datetime import datetime
 from elyra._version import __version__
 from elyra.metadata import MetadataManager
 from elyra.pipeline import RuntimePipelineProcess, PipelineProcessor, PipelineProcessorResponse
 from elyra.util.path import get_absolute_path
 from jinja2 import Environment, PackageLoader
+from kfp import Client as ArgoClient
+from kfp import compiler as kfp_argo_compiler
+from kfp.aws import use_aws_secret
+from kfp_tekton import TektonClient, compiler as kfp_tekton_compiler
 from kfp_notebook.pipeline import NotebookOp
 from kfp_server_api.exceptions import ApiException
 import kfp.gcp as gcp
@@ -87,10 +90,10 @@ class KfpPipelineProcessor(RuntimePipelineProcess):
 
             # Create a KFP client
             if 'Tekton' == engine:
-                client = kfp_tekton.TektonClient(host=api_endpoint,
-                                                 cookies=session_cookie)
+                client = TektonClient(host=api_endpoint,
+                                      cookies=session_cookie)
             else:
-                client = kfp.Client(host=api_endpoint,
+                client = ArgoClient(host=api_endpoint,
                                     cookies=session_cookie)
 
             # Determine whether a pipeline with the provided
@@ -152,9 +155,9 @@ class KfpPipelineProcessor(RuntimePipelineProcess):
                                                               experiment_name=experiment_name,
                                                               cos_directory=cos_directory)
                 if 'Tekton' == engine:
-                    kfp_tekton.compiler.TektonCompiler().compile(pipeline_function, pipeline_path)
+                    kfp_tekton_compiler.TektonCompiler().compile(pipeline_function, pipeline_path)
                 else:
-                    kfp.compiler.Compiler().compile(pipeline_function, pipeline_path)
+                    kfp_argo_compiler.Compiler().compile(pipeline_function, pipeline_path)
             except Exception as ex:
                 raise RuntimeError('Error compiling pipeline {} for engine {} at {}'.
                                    format(pipeline_name, engine, pipeline_path), str(ex)) from ex
@@ -246,6 +249,7 @@ class KfpPipelineProcessor(RuntimePipelineProcess):
         api_endpoint = runtime_configuration.metadata['api_endpoint']
         namespace = runtime_configuration.metadata.get('user_namespace')
         engine = runtime_configuration.metadata.get('engine')
+        cos_secret = runtime_configuration.metadata.get('cos_secret')
 
         if os.path.exists(absolute_pipeline_export_path) and not overwrite:
             raise ValueError("File " + absolute_pipeline_export_path + " already exists.")
@@ -262,10 +266,10 @@ class KfpPipelineProcessor(RuntimePipelineProcess):
 
                 if 'Tekton' == engine:
                     self.log.info("Compiling pipeline for Tekton engine")
-                    kfp_tekton.compiler.TektonCompiler().compile(pipeline_function, absolute_pipeline_export_path)
+                    kfp_tekton_compiler.TektonCompiler().compile(pipeline_function, absolute_pipeline_export_path)
                 else:
                     self.log.info("Compiling pipeline for Argo engine")
-                    kfp.compiler.Compiler().compile(pipeline_function, absolute_pipeline_export_path)
+                    kfp_argo_compiler.Compiler().compile(pipeline_function, absolute_pipeline_export_path)
             except Exception as ex:
                 raise RuntimeError('Error compiling pipeline {} for export at {}'.
                                    format(pipeline_name, absolute_pipeline_export_path), str(ex)) from ex
@@ -284,7 +288,8 @@ class KfpPipelineProcessor(RuntimePipelineProcess):
                                                  pipeline_name,
                                                  pipeline_version=pipeline_version_name,
                                                  experiment_name=experiment_name,
-                                                 cos_directory=cos_directory)
+                                                 cos_directory=cos_directory,
+                                                 export=True)
 
             description = f'Created with Elyra {__version__} pipeline editor using {pipeline.source}.'
 
@@ -308,6 +313,7 @@ class KfpPipelineProcessor(RuntimePipelineProcess):
                                             experiment_name=experiment_name,
                                             run_name=job_name,
                                             engine=engine,
+                                            cos_secret=cos_secret,
                                             namespace=namespace,
                                             api_endpoint=api_endpoint,
                                             pipeline_description=description,
@@ -315,7 +321,9 @@ class KfpPipelineProcessor(RuntimePipelineProcess):
 
             # Write to Python file and fix formatting
             with open(absolute_pipeline_export_path, "w") as fh:
-                fh.write(autopep8.fix_code(python_output))
+                autopep_output = autopep8.fix_code(python_output)
+                output_to_file = format_str(autopep_output, mode=FileMode())
+                fh.write(output_to_file)
 
             self.log_pipeline_info(pipeline_name, "pipeline rendered", duration=(time.time() - t0_all))
 
@@ -330,7 +338,8 @@ class KfpPipelineProcessor(RuntimePipelineProcess):
                      pipeline_name,
                      pipeline_version='',
                      experiment_name='',
-                     cos_directory=None):
+                     cos_directory=None,
+                     export=False):
 
         runtime_configuration = self._get_metadata_configuration(namespace=MetadataManager.NAMESPACE_RUNTIMES,
                                                                  name=pipeline.runtime_config)
@@ -338,6 +347,8 @@ class KfpPipelineProcessor(RuntimePipelineProcess):
         cos_endpoint = runtime_configuration.metadata['cos_endpoint']
         cos_username = runtime_configuration.metadata['cos_username']
         cos_password = runtime_configuration.metadata['cos_password']
+        cos_secret = runtime_configuration.metadata.get('cos_secret')
+
         if cos_directory is None:
             cos_directory = pipeline_name
         cos_bucket = runtime_configuration.metadata['cos_bucket']
@@ -376,8 +387,9 @@ class KfpPipelineProcessor(RuntimePipelineProcess):
 
             # Collect env variables
             pipeline_envs = dict()
-            pipeline_envs['AWS_ACCESS_KEY_ID'] = cos_username
-            pipeline_envs['AWS_SECRET_ACCESS_KEY'] = cos_password
+            if not cos_secret:
+                pipeline_envs['AWS_ACCESS_KEY_ID'] = cos_username
+                pipeline_envs['AWS_SECRET_ACCESS_KEY'] = cos_password
             # Convey pipeline logging enablement to operation
             pipeline_envs['ELYRA_ENABLE_PIPELINE_INFO'] = str(self.enable_pipeline_info)
             # Setting identifies a writable directory in the container image.
@@ -425,6 +437,9 @@ class KfpPipelineProcessor(RuntimePipelineProcess):
             
             ## FIX right now were adding the gcp sa secret to all operations by default, should control it with some sort of flag
             notebook_ops[operation.id].apply(gcp.use_gcp_secret('kfp-gcp-bq-account'))
+
+            if cos_secret and not export:
+                notebook_ops[operation.id].apply(use_aws_secret(cos_secret))
 
             image_namespace = self._get_metadata_configuration(namespace=MetadataManager.NAMESPACE_RUNTIME_IMAGES)
             for image_instance in image_namespace:

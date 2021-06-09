@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.2.4 (4/26/2021)
+
+- Move cos_secret parameter into original cos category [1624](https://github.com/elyra-ai/elyra/pull/1624)
+- Add cos_secret option to runtime metadata configuration [1529](https://github.com/elyra-ai/elyra/pull/1529)
+- Update Makefile to simplify publishing container [1623](https://github.com/elyra-ai/elyra/pull/1623)
+
+## 2.2.3 (4/26/2021)
+
+- Update airflow-notebook version to v0.0.7 [1619](https://github.com/elyra-ai/elyra/pull/1619)
+- Expose user_namespace parameter in Airflow runtime schema [1545](https://github.com/elyra-ai/elyra/pull/1545)
+- Allow secure connections to s3 object storage [1616](https://github.com/elyra-ai/elyra/pull/1616)
+- Only allow for KFP Notebook patche releases
+- Display message when no code snippet or tag is defined [1603](https://github.com/elyra-ai/elyra/pull/1603)
+- Update submit button labels and dialog [1598](https://github.com/elyra-ai/elyra/pull/1598)
+- Use unittest mock module to avoid flake8 failure [1607](https://github.com/elyra-ai/elyra/pull/1607)
+
+## 2.2.2 (4/19/2021)
+
+- Adds material ui dependency to ui-components package [1567](https://github.com/elyra-ai/elyra/pull/1567)
+- Fix Elyra version when creating kf-notebook docker image [1523](https://github.com/elyra-ai/elyra/pull/1523)
+- Fix dependency suggestion in submit notebook dialog [1510](https://github.com/elyra-ai/elyra/pull/1510)
+- Pin the testutils and filebrowser version [1541](https://github.com/elyra-ai/elyra/pull/1541)
+- Update Jupyterlab-git extension to v0.30.0 [1582](https://github.com/elyra-ai/elyra/pull/1582)
+
 ## 2.2.1 (3/31/2021)
 
 - Update KFP Notebook to 0.22.0
