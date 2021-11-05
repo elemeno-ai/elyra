@@ -37,14 +37,14 @@ AND
 - A Kubernetes Cluster without Apache Airflow installed
     - Ensure Kubernetes is at least v1.18. Earlier versions might work  but have not been tested.
     - Helm v3.0 or later
-    - Use the [Helm chart](https://github.com/airflow-helm/charts/tree/main/charts/airflow) available in the Airflow source distribution with the [Elyra sample configuration](https://raw.githubusercontent.com/elyra-ai/elyra/v2.2.4/etc/kubernetes/airflow/helm/values.yaml).
+    - Use the [Helm chart](https://github.com/airflow-helm/charts/tree/main/charts/airflow) available in the Airflow source distribution with the [Elyra sample configuration](https://raw.githubusercontent.com/elyra-ai/elyra/v3.2.2/etc/kubernetes/airflow/helm/values.yaml).
     
 OR  
   
 - An existing Apache Airflow cluster 
     - Ensure Apache Airflow is at least v1.10.8 and below v2.0.0. Other versions might work but have not been tested.
     - Apache Airflow is configured to use the Kubernetes Executor.
-    - The [`airflow-notebook`](https://pypi.org/project/airflow-notebook/) operator package is installed on the webserver, scheduler, and workers.  
+    - Ensure the KubernetesPodOperator is installed and available in the Apache Airflow deployment
     
 ## Setting up a DAG repository on GitHub
 
@@ -75,7 +75,7 @@ To deploy Apache Airflow on a new Kubernetes cluster:
    kubectl create secret generic airflow-secret --from-file=id_rsa=.ssh/id_rsa --from-file=known_hosts=.ssh/known_hosts --from-file=id_rsa.pub=.ssh/id_rsa.pub -n airflow
    ```
   
-2. Download, review, and customize the [sample `helm` configuration](https://raw.githubusercontent.com/elyra-ai/elyra/v2.2.4/etc/kubernetes/airflow/helm/values.yaml) (or customize an existing configuration):
+2. Download, review, and customize the [sample `helm` configuration](https://raw.githubusercontent.com/elyra-ai/elyra/v3.2.2/etc/kubernetes/airflow/helm/values.yaml) (or customize an existing configuration):
    - Set `git.url` to the URL of the private repository you created earlier, e.g. `ssh://git@github.com/your-git-org/your-dag-repo`
    - Set `git.ref` to the DAG branch, e.g. `main`.
    - Set `git.secret` to the name of the secret you created, e.g. `airflow-secret`.
@@ -115,8 +115,6 @@ To deploy Apache Airflow on a new Kubernetes cluster:
        refreshTime: 10
    ```
 
-   Note: The example configuration references the pre-built `elyra/airflow` container image, which has the [`airflow-notebook` package](https://pypi.org/project/airflow-notebook/) pre-installed. This package contains the [operator](https://github.com/elyra-ai/airflow-notebook) that supports running of Jupyter notebooks or Python scripts as tasks.
-
    ```bash
    airflow:
    ## configs for the docker image of the web/scheduler/worker
@@ -125,7 +123,7 @@ To deploy Apache Airflow on a new Kubernetes cluster:
      repository: elyra/airflow
    ```    
   
-   The container image is created using [this `Dockerfile`](https://github.com/elyra-ai/elyra/tree/v2.2.4/etc/docker/airflow) and published on [Docker Hub](https://hub.docker.com/r/elyra/airflow) and [quay.io](https://quay.io/repository/elyra/airflow).
+   The container image is created using [this `Dockerfile`](https://github.com/elyra-ai/elyra/tree/v3.2.2/etc/docker/airflow) and published on [Docker Hub](https://hub.docker.com/r/elyra/airflow) and [quay.io](https://quay.io/repository/elyra/airflow).
 
 3. Install Apache Airflow using the customized configuration.
   
@@ -139,6 +137,5 @@ Once Apache Airflow is deployed you are ready to create and run pipelines, as de
 
 To enable running of notebook pipelines on an existing Apache Airflow deployment  
 - Enable Git as DAG storage by customizing the [Git settings in `airflow.cfg`](https://github.com/apache/airflow/blob/6416d898060706787861ff8ecbc4363152a35f45/airflow/config_templates/default_airflow.cfg#L913).
-- Install the [`airflow-notebook` Python package](https://github.com/elyra-ai/airflow-notebook) in the web-server, scheduler, and worker pods.
 
 Once Apache Airflow is deployed you are ready to create and run pipelines, as described in the [tutorial](../getting_started/tutorials).

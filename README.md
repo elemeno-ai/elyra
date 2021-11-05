@@ -30,15 +30,15 @@ Elyra is a set of AI-centric extensions to JupyterLab Notebooks.
 
 Elyra currently includes the following functionality:
 
-- [Create and run AI pipelines](https://elyra.readthedocs.io/en/latest/getting_started/overview.html#ai-pipelines-visual-editor)
-- [Run notebooks as batch jobs](https://elyra.readthedocs.io/en/latest/getting_started/overview.html#ability-to-run-a-notebook-as-a-batch-job)
+- [Visual Pipeline Editor](https://elyra.readthedocs.io/en/latest/getting_started/overview.html#ai-pipelines-visual-editor)
+- [Ability to run a notebook, Python or R script as a batch job](https://elyra.readthedocs.io/en/latest/getting_started/overview.html#ability-to-run-a-notebook-python-or-r-script-as-a-batch-job)
 - [Reusable Code Snippets](https://elyra.readthedocs.io/en/latest/getting_started/overview.html#reusable-code-snippets)
 - [Hybrid runtime support](https://elyra.readthedocs.io/en/latest/getting_started/overview.html#hybrid-runtime-support) based on [Jupyter Enterprise Gateway](https://github.com/jupyter/enterprise_gateway)
 - [Python and R script editors with local/remote execution capabilities](https://elyra.readthedocs.io/en/latest/getting_started/overview.html#python-and-r-scripts-execution-support)
-- [Python script navigation using auto-generated Table of Contents](https://elyra.readthedocs.io/en/latest/getting_started/overview.html#python-script-execution-support)
+- [Python script navigation using auto-generated Table of Contents](https://elyra.readthedocs.io/en/latest/getting_started/overview.html##python-and-r-scripts-execution-support)
 - [Notebook navigation using auto-generated outlines using Table of Contents](https://elyra.readthedocs.io/en/latest/getting_started/overview.html#notebook-navigation-using-auto-generated-table-of-contents)
-- [Version control using Git integration](https://elyra.readthedocs.io/en/latest/getting_started/overview.html#version-control-using-git-integration)
 - [Language Server Protocol integration](https://elyra.readthedocs.io/en/latest/getting_started/overview.html#language-server-protocol-integration)
+- [Version control using Git integration](https://elyra.readthedocs.io/en/latest/getting_started/overview.html#version-control-using-git-integration)
 
 ![Elyra](docs/source/images/elyra-main-page.png)
 
@@ -52,7 +52,7 @@ You can try out some of Elyra features using the [My Binder](https://mybinder.re
 
 Click on a link below to try Elyra, on a sandbox environment, without having to install anything.
 
-- [![Launch latest stable version](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/elyra-ai/elyra/v2.2.4?urlpath=lab/tree/binder-demo) (Latest stable version - see [changelog](/docs/source/getting_started/changelog.md) for recent updates)
+- [![Launch latest stable version](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/elyra-ai/elyra/v3.2.2?urlpath=lab/tree/binder-demo) (Latest stable version - see [changelog](/docs/source/getting_started/changelog.md) for recent updates)
 - [![Launch latest development version](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/elyra-ai/elyra/master?urlpath=lab/tree/binder-demo) (Development version - expect longer image load time due to just-in-time build)
 
 #### Using Docker
@@ -65,14 +65,14 @@ You can also try Elyra by running one of the docker images from [Docker Hub](htt
 The command below starts the most recent development build in a clean environment:
 
 ```
-docker run -it -p 8888:8888 elyra/elyra:2.2.4 jupyter lab --debug
+docker run -it -p 8888:8888 elyra/elyra:3.2.2 jupyter lab --debug
 ```
 
 To make a local directory containing your Notebooks (e.g. ${HOME}/opensource/jupyter-notebooks/) available in your
 docker container, you can use a mount command similar to the following:
 
 ```
-docker run -it -p 8888:8888 -v ${HOME}/opensource/jupyter-notebooks/:/home/jovyan/work -w /home/jovyan/work elyra/elyra:2.2.4 jupyter lab --debug
+docker run -it -p 8888:8888 -v ${HOME}/opensource/jupyter-notebooks/:/home/jovyan/work -w /home/jovyan/work elyra/elyra:3.2.2 jupyter lab --debug
 ```
 
 These should produce output similar to that below, where you can then find the URL to be used
@@ -98,16 +98,28 @@ Elyra can be installed from PyPI:
 
 #### JupyterLab support
 
+**NOTE:** On November 2020, a new version of PIP (20.3) was released with a new, "2020" resolver. This resolver does not yet work with Elyra and might lead to errors in installation. In order to install Elyra, you need to either downgrade pip to version 20.2.4 `pip install --upgrade pip==20.2.4` or, in case you use pip 20.3 (or later), you need to add option `--use-deprecated legacy-resolver` to your pip install command.
+
 * [JupyterLab](https://github.com/jupyterlab/jupyterlab) 3.x is supported on **Elyra 2.0.0 and above**
 
-  Install from PyPI:
+  Install Elyra from PyPI ( Elyra >= 3.1.0 ):
+
   ```bash
-  pip install --upgrade "elyra>=2.0.1" && jupyter lab build
+  pip3 install --upgrade "elyra[all]>=3.1.0" && jupyter lab build
   ```
 
-  Note: Ubuntu and CentOS users may need to use `pip3 install elyra` 
+  Install fom Conda ( Elyra >= 3.1.0 ):
+  ```bash
+  conda install -c conda-forge "elyra[all]>=3.1.0" && jupyter lab build
+  ```
 
-  Install fom Conda:
+  Install Elyra from PyPI ( Elyra < 3.1.0 ):
+
+  ```bash
+  pip3 install --upgrade "elyra>=2.0.1" && jupyter lab build
+  ```
+
+  Install fom Conda ( Elyra < 3.1.0 ):
   ```bash
   conda install -c conda-forge "elyra>=2.0.1" && jupyter lab build
   ```
@@ -116,9 +128,8 @@ Elyra can be installed from PyPI:
 
   Install from PyPI:
   ```bash
-  pip install --upgrade "elyra<2.0.0" && jupyter lab build
+  pip3 install --upgrade "elyra<2.0.0" && jupyter lab build
   ```
-  Note: Ubuntu and CentOS users may need to use `pip3 install elyra`
 
   Install from Conda:
   ```bash
@@ -129,10 +140,9 @@ Elyra can be installed from PyPI:
 
   Install from PyPI:
   ```bash
-  pip install elyra==0.10.3 && jupyter lab build
+  pip3 install elyra==0.10.3 && jupyter lab build
   ```
 
-**NOTE:** On November 2020, a new version of PIP (20.3) was released with a new, "2020" resolver. This resolver does not yet work with Elyra and might lead to errors in installation. In order to install Elyra, you need to either downgrade pip to version 20.2.4 `pip install --upgrade pip==20.2.4` or, in case you use pip 20.3 (or later), you need to add option `--use-deprecated legacy-resolver` to your pip install command.
 ### Verify Installation 
 
 Run the following commands to verify the installation. Note that in the example output below the `[version]` placeholder is displayed instead of an actual version identifier, which might change with every release.
@@ -229,6 +239,16 @@ If you are interested in helping make Elyra better, we encourage you to take a l
 [Contributing](CONTRIBUTING.md) page,  
 [Development Workflow](https://elyra.readthedocs.io/en/latest/developer_guide/development-workflow.html)
 documentation, and invite you to attend our weekly dev community meetings.
+
+### Daily Dev Meetings
+Join us for our daily scrum (except Thursdays) to discuss development items you're working on or have questions about. Everyone is welcome and participation is optional.
+
+**When**: Every weekday except Thursdays at [8:30AM Pacific](https://www.thetimezoneconverter.com/?t=8%3A30%20am&tz=San%20Francisco&)
+
+**Where**: [Webex](https://ibm.webex.com/meet/akchin)
+
+**What**: [Current Milestone](https://github.com/elyra-ai/elyra/milestones)
+
 
 ### Weekly Dev Community Meeting 
 Join us weekly to discuss Elyra development topics.  Everyone is welcome and participation is optional.

@@ -18,7 +18,7 @@ describe('Code Snippet tests', () => {
   const snippetName = 'test-code-snippet';
 
   beforeEach(() => {
-    cy.openJupyterLab();
+    cy.resetJupyterLab();
     openCodeSnippetExtension();
   });
 
@@ -36,8 +36,6 @@ describe('Code Snippet tests', () => {
     cy.get(
       '.elyra-metadata .elyra-metadataHeader-button[title="Create new Code Snippet"]'
     ).should('be.visible');
-    // Close metadata editor tab
-    cy.closeCurrentTab();
   });
 
   it('should provide warnings when required fields are not entered properly', () => {
@@ -53,9 +51,6 @@ describe('Code Snippet tests', () => {
       'required-warnings'
     );
     cy.get('@required-warnings').should('have.length', 2);
-
-    // Close metadata editor tab
-    cy.closeCurrentTab();
   });
 
   it('should create valid code-snippet', () => {
@@ -82,6 +77,20 @@ describe('Code Snippet tests', () => {
 
     // Close dialog
     cy.get('button.jp-mod-accept').click();
+  });
+
+  it('should trigger save / submit on pressing enter', () => {
+    populateCodeSnippetFields(snippetName);
+
+    cy.get('.elyra-metadataEditor-form-display_name').type('{enter}');
+
+    // Metadata editor tab should not be visible
+    cy.get(
+      'li.lm-TabBar-tab[data-id="elyra-metadata-editor:code-snippets:code-snippet:new"]'
+    ).should('not.exist');
+
+    // Check new code snippet is displayed
+    getSnippetByName(snippetName);
   });
 
   // Delete snippet
@@ -310,7 +319,7 @@ const createInvalidCodeSnippet = (snippetName: string): any => {
   saveAndCloseMetadataEditor();
 };
 
-const createValidCodeSnippet = (snippetName: string): any => {
+const populateCodeSnippetFields = (snippetName: string): any => {
   clickCreateNewSnippetButton();
 
   // Name code snippet
@@ -323,6 +332,10 @@ const createValidCodeSnippet = (snippetName: string): any => {
   cy.get('.CodeMirror .CodeMirror-scroll:visible').type(
     'print("Code Snippet Test")'
   );
+};
+
+const createValidCodeSnippet = (snippetName: string): any => {
+  populateCodeSnippetFields(snippetName);
 
   saveAndCloseMetadataEditor();
 
@@ -339,21 +352,6 @@ const saveAndCloseMetadataEditor = (): void => {
   cy.get('.elyra-metadataEditor-saveButton > button:visible').click();
 };
 
-// const fillMetadaEditorForm = (snippetName: string): void => {
-//   // Name code snippet
-//   cy.get('.elyra-metadataEditor-form-display_name').type(snippetName);
-
-//   // Select python language from dropdown list
-//   editSnippetLanguage(snippetName, 'Python');
-
-//   // Add snippet code
-//   cy.get('.elyra-metadataEditor-code > .bp3-form-content').type(
-//     'print("Code Snippet Test")'
-//   );
-
-//   saveAndCloseMetadataEditor();
-// };
-
 const deleteSnippet = (snippetName: string): void => {
   // Find element by name
   const item = getSnippetByName(snippetName);
@@ -362,7 +360,7 @@ const deleteSnippet = (snippetName: string): void => {
   item.find('button[title="Delete"]').click();
 
   // Confirm action in dialog
-  cy.get('.jp-Dialog-header').contains(`Delete snippet: ${snippetName}?`);
+  cy.get('.jp-Dialog-header').contains(`Delete snippet '${snippetName}'?`);
   cy.get('button.jp-mod-accept').click();
 };
 
@@ -373,19 +371,6 @@ const getActionButtonsElement = (snippetName: string): any => {
 
   return actionButtonsElement;
 };
-
-// const deleteFileByType = (type: string): void => {
-//   cy.getFileByType(type).rightclick();
-//   cy.get('.p-Menu-content > [data-command="filebrowser:delete"]').click();
-//   cy.get('.jp-mod-accept > .jp-Dialog-buttonLabel:visible').click();
-//   cy.wait(100);
-// };
-
-// const checkCodeMirror = (): void => {
-//   cy.get('span.cm-string')
-//     .first()
-//     .contains('Code Snippet Test');
-// };
 
 const insert = (snippetName: string): void => {
   getActionButtonsElement(snippetName).within(() => {
@@ -403,8 +388,3 @@ const editSnippetLanguage = (snippetName: string, lang: string): void => {
     .contains(`${lang}`)
     .click();
 };
-
-// const closeTabWithoutSaving = (): void => {
-//   cy.closeCurrentTab();
-//   cy.get('button.jp-mod-accept.jp-mod-warn').click();
-// };

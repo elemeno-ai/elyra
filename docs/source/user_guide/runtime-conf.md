@@ -25,7 +25,9 @@ You can manage runtime configurations using the [JupyterLab UI](#managing-runtim
 
 A runtime configuration requires connectivity details for 
 * A Kubeflow Pipelines deployment or an Apache Airflow deployment
-* S3-based Object Storage (e.g. minio or IBM Cloud Object Storage)
+* S3-based Object Storage (e.g. Minio or IBM Cloud Object Storage)
+
+Note: Elyra is only tested with Kubeflow v1.2.x and v1.3.x and Apache Airflow v1.10.x.
 
 ### Managing runtime configurations using the JupyterLab UI
 
@@ -181,8 +183,11 @@ Example: `anonymous`
 
 ##### Kubeflow Pipelines API endpoint username (api_username)
 Username used to access your KubeFlow Pipelines API endpoint. This setting is required if the Kubeflow Pipelines deployment is multi-user, auth enabled.
+Currently, only Dex `staticPasswords` and `LDAP Connector` authentication types are supported.
 
-Example: `username@email.com`
+(NOTE: if multiple Dex authentication types are enabled, we will try to use `staticPasswords`)
+
+Example: `user@example.com`
 
 ##### Kubeflow Pipelines API endpoint (api_password)
 Password used to access your KubeFlow Pipelines API endpoint. This setting is required if the Kubeflow Pipelines deployment is multi-user, auth enabled.
@@ -295,6 +300,13 @@ Example: `test-bucket`
 and grant that key at least [Writer](https://cloud.ibm.com/docs/services/cloud-object-storage/iam?topic=cloud-object-storage-iam-bucket-permissions) level privileges.
 Specify `access_key_id` and `secret_access_key` as `cos_username` and `cos_password`, respectively.
 
+### Verifying runtime configurations
+
+The [Elyra examples repository contains a basic pipeline](https://github.com/elyra-ai/examples/pipelines/setup_validation) that you can use to verify your runtime configurations:
+
+1. Launch JupyterLab.
+1. Clone `https://github.com/elyra-ai/examples.git` (`Git` > `Clone A Repository`) into the current working directory.
+1. In the File Browser navigate to `examples/pipelines/setup_validation/` and follow the instructions in `README.md`. If your runtime configuration is correct and the target runtime environment configured correctly, the validation pipeline should run as is without any modifications.
 
 ### Troubleshooting 
 

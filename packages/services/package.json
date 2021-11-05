@@ -1,6 +1,6 @@
 {
   "name": "@elyra/services",
-  "version": "2.2.4",
+  "version": "3.2.2",
   "description": "JupyterLab - Utilities for use in elyra",
   "keywords": [
     "jupyter",
@@ -30,7 +30,9 @@
     "dist": "npm pack .",
     "prepare": "npm run build",
     "test": "jest",
-    "watch": "tsc -w"
+    "watch": "tsc -w",
+    "lab:install": "jupyter labextension link --no-build",
+    "lab:uninstall": "jupyter labextension unlink --no-build"
   },
   "dependencies": {
     "@jupyterlab/apputils": "^3.0.0",

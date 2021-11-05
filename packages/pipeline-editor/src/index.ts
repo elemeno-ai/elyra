@@ -14,10 +14,14 @@
  * limitations under the License.
  */
 
+import { MetadataWidget } from '@elyra/metadata-common';
+import { PIPELINE_CURRENT_VERSION } from '@elyra/pipeline-editor';
 import {
   containerIcon,
   pipelineIcon,
-  runtimesIcon
+  RequestErrors,
+  runtimesIcon,
+  pipelineComponentsIcon
 } from '@elyra/ui-components';
 
 import {
@@ -36,10 +40,11 @@ import { ILauncher } from '@jupyterlab/launcher';
 import { IMainMenu } from '@jupyterlab/mainmenu';
 import { addIcon } from '@jupyterlab/ui-components';
 
+import { getRuntimeIcon } from './pipeline-hooks';
 import { PipelineEditorFactory, commandIDs } from './PipelineEditorWidget';
-import { RUNTIMES_NAMESPACE } from './PipelineService';
+import { PipelineService, RUNTIMES_SCHEMASPACE } from './PipelineService';
 import {
-  RUNTIME_IMAGES_NAMESPACE,
+  RUNTIME_IMAGES_SCHEMASPACE,
   RuntimeImagesWidget
 } from './RuntimeImagesWidget';
 import { RuntimesWidget } from './RuntimesWidget';
@@ -51,6 +56,7 @@ import '../style/index.css';
 const PIPELINE_FACTORY = 'Pipeline Editor';
 const PIPELINE = 'pipeline';
 const PIPELINE_EDITOR_NAMESPACE = 'elyra-pipeline-editor-extension';
+const COMPONENT_REGISTRY_SCHEMASPACE = 'component-registries';
 
 /**
  * Initialization data for the pipeline-editor-extension extension.
@@ -73,7 +79,7 @@ const extension: JupyterFrontEndPlugin<void> = {
     browserFactory: IFileBrowserFactory,
     restorer: ILayoutRestorer,
     menu: IMainMenu,
-    themeManager: IThemeManager | null
+    themeManager?: IThemeManager
   ) => {
     console.log('Elyra - pipeline-editor extension is activated!');
 
@@ -91,6 +97,7 @@ const extension: JupyterFrontEndPlugin<void> = {
     // Add the default behavior of opening the widget for .pipeline files
     app.docRegistry.addFileType({
       name: PIPELINE,
+      displayName: 'Pipeline',
       extensions: ['.pipeline'],
       icon: pipelineIcon
     });
@@ -136,14 +143,41 @@ const extension: JupyterFrontEndPlugin<void> = {
       selector: '[data-file-type="python"]',
       command: addFileToPipelineCommand
     });
+    app.contextMenu.addItem({
+      selector: '[data-file-type="r"]',
+      command: addFileToPipelineCommand
+    });
 
     // Add an application command
     const openPipelineEditorCommand: string = commandIDs.openPipelineEditor;
     app.commands.addCommand(openPipelineEditorCommand, {
-      label: args =>
-        args['isPalette'] ? 'New Pipeline Editor' : 'Pipeline Editor',
-      icon: args => (args['isPalette'] ? undefined : pipelineIcon),
-      execute: () => {
+      label: (args: any) => {
+        return args['isPalette']
+          ? 'New Pipeline Editor'
+          : args.runtime?.display_name
+          ? args.isMenu
+            ? `${args.runtime?.display_name} Pipeline Editor`
+            : 'Pipeline Editor'
+          : 'Generic Pipeline Editor';
+      },
+      caption: (args: any) =>
+        args.runtime?.display_name
+          ? `${args.runtime?.display_name} Pipeline Editor`
+          : 'Generic Pipeline Editor',
+      iconLabel: (args: any) =>
+        args['isPalette']
+          ? ''
+          : args.runtime?.display_name
+          ? `${args.runtime?.display_name} Pipeline Editor`
+          : 'Generic Pipeline Editor',
+      icon: (args: any) => {
+        if (args['isPalette']) {
+          return undefined;
+        } else {
+          return getRuntimeIcon(args.runtime?.name);
+        }
+      },
+      execute: (args: any) => {
         // Creates blank file, then opens it in a new window
         app.commands
           .execute(commandIDs.newDocManager, {
@@ -151,10 +185,42 @@ const extension: JupyterFrontEndPlugin<void> = {
             path: browserFactory.defaultBrowser.model.path,
             ext: '.pipeline'
           })
-          .then(model => {
-            return app.commands.execute(commandIDs.openDocManager, {
-              path: model.path,
-              factory: PIPELINE_FACTORY
+          .then(async model => {
+            const pipelineJson = {
+              doc_type: 'pipeline',
+              version: '3.0',
+              json_schema:
+                'http://api.dataplatform.ibm.com/schemas/common-pipeline/pipeline-flow/pipeline-flow-v3-schema.json',
+              id: 'elyra-auto-generated-pipeline',
+              primary_pipeline: 'primary',
+              pipelines: [
+                {
+                  id: 'primary',
+                  nodes: [],
+                  app_data: {
+                    ui_data: {
+                      comments: []
+                    },
+                    version: PIPELINE_CURRENT_VERSION,
+                    runtime: args.runtime?.name
+                  },
+                  runtime_ref: ''
+                }
+              ],
+              schemas: []
+            };
+            const newWidget = await app.commands.execute(
+              commandIDs.openDocManager,
+              {
+                path: model.path,
+                factory: PIPELINE_FACTORY
+              }
+            );
+            newWidget.context.ready.then(() => {
+              newWidget.context.model.fromJSON(pipelineJson);
+              app.commands.execute(commandIDs.saveDocManager, {
+                path: model.path
+              });
             });
           });
       }
@@ -166,18 +232,43 @@ const extension: JupyterFrontEndPlugin<void> = {
       category: 'Elyra'
     });
 
-    // Add the command to the launcher
-    if (launcher) {
-      launcher.add({
-        command: openPipelineEditorCommand,
-        category: 'Elyra',
-        rank: 1
-      });
-    }
-    // Add new pipeline to the file menu
-    menu.fileMenu.newMenu.addGroup(
-      [{ command: openPipelineEditorCommand }],
-      30
+    PipelineService.getRuntimesSchema().then(
+      (schema: any) => {
+        // Add the command to the launcher
+        if (launcher) {
+          launcher.add({
+            command: openPipelineEditorCommand,
+            category: 'Elyra',
+            rank: 1
+          });
+          for (const runtime of schema) {
+            launcher.add({
+              command: openPipelineEditorCommand,
+              category: 'Elyra',
+              args: { runtime },
+              rank:
+                runtime.name === 'kfp' ? 2 : runtime.name === 'airflow' ? 3 : 4
+            });
+          }
+        }
+        // Add new pipeline to the file menu
+        menu.fileMenu.newMenu.addGroup(
+          [{ command: openPipelineEditorCommand, args: { isMenu: true } }],
+          30
+        );
+        for (const runtime of schema) {
+          menu.fileMenu.newMenu.addGroup(
+            [
+              {
+                command: openPipelineEditorCommand,
+                args: { runtime, isMenu: true }
+              }
+            ],
+            runtime.name === 'kfp' ? 31 : runtime.name === 'airflow' ? 32 : 33
+          );
+        }
+      },
+      (error: any) => RequestErrors.serverError(error)
     );
 
     // SubmitNotebookButtonExtension initialization code
@@ -209,10 +300,11 @@ const extension: JupyterFrontEndPlugin<void> = {
       app,
       themeManager,
       display_name: 'Runtimes',
-      namespace: RUNTIMES_NAMESPACE,
-      icon: runtimesIcon
+      schemaspace: RUNTIMES_SCHEMASPACE,
+      icon: runtimesIcon,
+      schemaType: 'runtime'
     });
-    const runtimesWidgetID = `elyra-metadata:${RUNTIMES_NAMESPACE}`;
+    const runtimesWidgetID = `elyra-metadata:${RUNTIMES_SCHEMASPACE}`;
     runtimesWidget.id = runtimesWidgetID;
     runtimesWidget.title.icon = runtimesIcon;
     runtimesWidget.title.caption = 'Runtimes';
@@ -224,16 +316,29 @@ const extension: JupyterFrontEndPlugin<void> = {
       app,
       themeManager,
       display_name: 'Runtime Images',
-      namespace: RUNTIME_IMAGES_NAMESPACE,
+      schemaspace: RUNTIME_IMAGES_SCHEMASPACE,
       icon: containerIcon
     });
-    const runtimeImagesWidgetID = `elyra-metadata:${RUNTIME_IMAGES_NAMESPACE}`;
+    const runtimeImagesWidgetID = `elyra-metadata:${RUNTIME_IMAGES_SCHEMASPACE}`;
     runtimeImagesWidget.id = runtimeImagesWidgetID;
     runtimeImagesWidget.title.icon = containerIcon;
     runtimeImagesWidget.title.caption = 'Runtime Images';
 
+    const componentRegistryWidget = new MetadataWidget({
+      app,
+      themeManager,
+      display_name: 'Pipeline Components',
+      schemaspace: COMPONENT_REGISTRY_SCHEMASPACE,
+      icon: pipelineComponentsIcon
+    });
+    const componentRegistryWidgetID = `elyra-metadata:${COMPONENT_REGISTRY_SCHEMASPACE}`;
+    componentRegistryWidget.id = componentRegistryWidgetID;
+    componentRegistryWidget.title.icon = pipelineComponentsIcon;
+    componentRegistryWidget.title.caption = 'Pipeline Components';
+
     restorer.add(runtimeImagesWidget, runtimeImagesWidgetID);
     app.shell.add(runtimeImagesWidget, 'left', { rank: 951 });
+    app.shell.add(componentRegistryWidget, 'left', { rank: 961 });
   }
 };
 export default extension;

@@ -18,7 +18,7 @@ import { IThemeManager } from '@jupyterlab/apputils';
 
 import {
   StylesProvider,
-  createMuiTheme,
+  createTheme,
   ThemeProvider as MuiThemeProvider
 } from '@material-ui/core';
 
@@ -34,7 +34,7 @@ declare global {
 }
 
 export interface IProps {
-  themeManager: IThemeManager;
+  themeManager?: IThemeManager;
 }
 
 const pseudoClasses = [
@@ -101,7 +101,7 @@ const overrides = {
 };
 
 if (window.ELYRA_darkTheme === undefined) {
-  window.ELYRA_darkTheme = createMuiTheme({
+  window.ELYRA_darkTheme = createTheme({
     palette: {
       type: 'dark'
     },
@@ -110,7 +110,7 @@ if (window.ELYRA_darkTheme === undefined) {
 }
 
 if (window.ELYRA_lightTheme === undefined) {
-  window.ELYRA_lightTheme = createMuiTheme({
+  window.ELYRA_lightTheme = createTheme({
     palette: {
       type: 'light'
     },
@@ -118,7 +118,7 @@ if (window.ELYRA_lightTheme === undefined) {
   });
 }
 
-const isLightTheme = (themeManager: IThemeManager): boolean => {
+const isLightTheme = (themeManager?: IThemeManager): boolean => {
   // Default to light theme
   return themeManager?.theme ? themeManager.isLight(themeManager.theme) : true;
 };
@@ -135,7 +135,7 @@ export const ThemeProvider: React.FC<IProps> = ({ themeManager, children }) => {
       themeManager.themeChanged.connect(updateTheme);
     }
     return (): void => {
-      themeManager.themeChanged.disconnect(updateTheme);
+      themeManager?.themeChanged.disconnect(updateTheme);
     };
   }, [themeManager]);
 

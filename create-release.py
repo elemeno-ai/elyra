@@ -18,12 +18,17 @@
 
 import argparse
 import elyra
+import elyra._version
+import git
+import io
 import os
 import re
 import shutil
 import subprocess
 import sys
 
+from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 config: SimpleNamespace
@@ -33,6 +38,7 @@ VERSION_REG_EX = r"(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(\.(?P<pre_rele
 DEFAULT_GIT_URL = 'git@github.com:elyra-ai/elyra.git'
 DEFAULT_EXTENSION_PACKAGE_GIT_URL = 'git@github.com:elyra-ai/elyra-package-template.git'
 DEFAULT_BUILD_DIR = 'build/release'
+GIT_BRANCH = 'v3.2.x'
 
 
 class DependencyException(Exception):
@@ -124,9 +130,11 @@ def update_version_to_release() -> None:
         sed(_source('README.md'),
             r"elyra:dev ",
             f"elyra:{new_version} ")
-        sed(_source('README.md'),
-            r"/v[0-9].[0-9].[0-9]?",
-            f"/v{new_version}?")
+        if config.rc is None and config.beta is None:
+            # Update the stable version Binder link
+            sed(_source('README.md'),
+                r"/v[0-9].[0-9].[0-9]?",
+                f"/v{new_version}?")
         sed(_source('etc/docker/kubeflow/README.md'),
             r"kf-notebook:dev",
             f"kf-notebook:{new_version}")
@@ -147,8 +155,8 @@ def update_version_to_release() -> None:
             f"{new_version}")
 
         sed(_source('etc/docker/kubeflow/Dockerfile'),
-            r"elyra==[0-9].[0-9].[0-9]",
-            f"elyra=={new_version}")
+            r"elyra\[all\]==.*",
+            f"elyra\[all\]=={new_version}")
         sed(_source('etc/docker/elyra/Dockerfile'),
             r"    cd /tmp/elyra && make UPGRADE_STRATEGY=eager install && rm -rf /tmp/elyra",
             f"    cd /tmp/elyra \&\& git checkout tags/v{new_version} -b v{new_version} \&\& make UPGRADE_STRATEGY=eager install \&\& rm -rf /tmp/elyra")
@@ -163,7 +171,7 @@ def update_version_to_release() -> None:
 
         sed(_source('packages/theme/src/index.ts'),
             r"https://elyra.readthedocs.io/en/latest/",
-            f"https://elyra.readthedocs.io/en/stable/")
+            rf"https://elyra.readthedocs.io/en/v{new_version}/")
 
         check_run(["lerna", "version", new_npm_version, "--no-git-tag-version", "--no-push", "--yes"], cwd=config.source_dir)
         check_run(["yarn", "version", "--new-version", new_npm_version, "--no-git-tag-version"], cwd=config.source_dir)
@@ -223,7 +231,7 @@ def update_version_to_dev() -> None:
             "master")
 
         # for now, this stays with the latest release
-        # sed(_source('etc/docker/kubeflow/Dockerfile'), r"elyra==[0-9].[0-9].[0-9]", f"elyra=={new_version}")
+        # sed(_source('etc/docker/kubeflow/Dockerfile'), r"elyra[all]==.*", f"elyra[all]=={new_version}")
 
         sed(_source('etc/docker/elyra/Dockerfile'),
             rf"\&\& git checkout tags/v{new_version} -b v{new_version} ",
@@ -238,8 +246,8 @@ def update_version_to_dev() -> None:
             f"extension v{dev_npm_version}")
 
         sed(_source('packages/theme/src/index.ts'),
-            r"https://elyra.readthedocs.io/en/stable/",
-            f"https://elyra.readthedocs.io/en/latest/")
+            rf"https://elyra.readthedocs.io/en/v{new_version}/",
+            rf"https://elyra.readthedocs.io/en/latest/")
 
         check_run(["lerna", "version", dev_npm_version, "--no-git-tag-version", "--no-push", "--yes"], cwd=config.source_dir)
         check_run(["yarn", "version", "--new-version", dev_npm_version, "--no-git-tag-version"], cwd=config.source_dir)
@@ -269,6 +277,8 @@ def checkout_code() -> None:
     os.makedirs(config.work_dir)
     print(f'Cloning : {config.git_url} to {config.work_dir}')
     check_run(['git', 'clone', config.git_url], cwd=config.work_dir)
+    print(f'Checking out branch : {config.git_branch} in {config.source_dir}')
+    check_run(['git', 'checkout', '-b', config.git_branch, f'origin/{config.git_branch}'], cwd=config.source_dir)
     check_run(['git', 'config', 'user.name', config.git_user_name], cwd=config.source_dir)
     check_run(['git', 'config', 'user.email', config.git_user_email], cwd=config.source_dir)
 
@@ -335,8 +345,75 @@ def copy_extension_archive(extension: str, work_dir: str) -> None:
     shutil.copy(extension_package_source_file, extension_package_dest_file)
 
 
+def generate_changelog() -> None:
+    global config
+
+    print("-----------------------------------------------------------------")
+    print("--------------------- Preparing Changelog -----------------------")
+    print("-----------------------------------------------------------------")
+
+
+    changelog_path = os.path.join(config.source_dir, 'docs/source/getting_started/changelog.md')
+    changelog_backup_path = os.path.join(config.source_dir, 'docs/source/getting_started/changelog.bak')
+    if os.path.exists(changelog_backup_path):
+        os.remove(changelog_backup_path)
+    shutil.copy(changelog_path, changelog_backup_path)
+
+    repo = git.Repo(config.source_dir)
+
+    # Start generating the release header on top of the changelog
+    with io.open(changelog_path, 'r+') as changelog:
+        changelog.write('# Changelog\n')
+        changelog.write('\n')
+        changelog.write(f'## Release {config.new_version} - {datetime.now().strftime("%m/%d/%Y")}\n')
+        changelog.write('\n')
+
+
+        start = 0
+        page_size = 10
+        continue_paginating = True
+        while continue_paginating:
+            # paginate the list of commits until it finds the begining of release changes
+            # which is denominated by a commit titled 'Prepare for next development iteration'
+            commits = list(repo.iter_commits(max_count=page_size, skip=start))
+            start += page_size
+            for commit in commits:
+                # for each commit, get it's title and prepare a changelog
+                # entry linking to the related pull request
+                commit_title = commit.message.splitlines()[0]
+                # commit_hash = commit.hexsha
+                # print(f'>>> {commit_hash} - {commit_title}')
+                if commit_title != 'Prepare for next development iteration':
+                    pr_string = ''
+                    pr = re.findall('\(#(.*?)\)', commit_title)
+                    if pr:
+                        commit_title = re.sub('\(#(.*?)\)', '', commit_title).strip()
+                        pr_string = f' - [#{pr[0]}](https://github.com/elyra-ai/elyra/pull/{pr[0]})'
+                    changelog_entry = f'- {commit_title}{pr_string}\n'
+                    changelog.write(changelog_entry)
+                else:
+                    # here it found the first commit of the release
+                    # changelog for the release is done
+                    # exit the loop
+                    continue_paginating = False
+                    break
+
+        # copy the remaining changelog at the bottom of the new content
+        with io.open(changelog_backup_path) as old_changelog:
+            line = old_changelog.readline() # ignore first line as title
+            line = old_changelog.readline()
+            while line:
+                changelog.write(line)
+                line = old_changelog.readline()
+
+
 def prepare_extensions_release() -> None:
     global config
+
+    print("-----------------------------------------------------------------")
+    print("--------------- Preparing Individual Extensions -----------------")
+    print("-----------------------------------------------------------------")
+
 
     extensions = {'elyra-code-snippet-extension':['elyra-code-snippet-extension', 'elyra-metadata-extension', 'elyra-theme-extension'],
                   'elyra-pipeline-editor-extension':['elyra-pipeline-editor-extension', 'elyra-metadata-extension', 'elyra-theme-extension'],
@@ -356,6 +433,8 @@ def prepare_extensions_release() -> None:
         setup_file = os.path.join(extension_source_dir, 'setup.py')
         sed(setup_file, "{{package-name}}", extension)
         sed(setup_file, "{{version}}", config.new_version)
+        sed(setup_file, "{{data-files}}", "('share/jupyter/lab/extensions', glob('./dist/*.tgz'))")
+        sed(setup_file, "{{install-requires}}", f"'elyra-server=={config.new_version}',")
 
         for dependency in extensions[extension]:
             copy_extension_archive(dependency, extension_source_dir)
@@ -363,6 +442,67 @@ def prepare_extensions_release() -> None:
         # build extension
         check_run(['python', 'setup.py', 'bdist_wheel', 'sdist'], cwd=extension_source_dir)
         print('')
+
+
+def prepare_runtime_extensions_package_release() -> None:
+    global config
+
+    print("-----------------------------------------------------------------")
+    print("---------------- Preparing Individual Packages ------------------")
+    print("-----------------------------------------------------------------")
+
+    packages = {'kfp-notebook': ['kfp>=1.6.3'],
+                'airflow-notebook': ['pygithub', 'black']}
+
+    packages_source = {'kfp-notebook': 'kfp',
+                       'airflow-notebook': 'airflow'}
+
+    for package in packages:
+        package_source_dir = os.path.join(config.work_dir, package)
+        print(f'Preparing package : {package} at {package_source_dir}')
+        # clone extension package template
+        if os.path.exists(package_source_dir):
+            print(f'Removing working directory: {config.source_dir}')
+            shutil.rmtree(package_source_dir)
+        print(f'Cloning : {config.git_extension_package_url} to {config.work_dir}')
+        check_run(['git', 'clone', config.git_extension_package_url, package], cwd=config.work_dir)
+        # update template
+        setup_file = os.path.join(package_source_dir, 'setup.py')
+        sed(setup_file, "{{package-name}}", package)
+        sed(setup_file, "{{version}}", config.new_version)
+        # no data files
+        sed(setup_file, "{{data-files}}", "")
+        # prepare package specific dependencies
+        requires = ''
+        for dependency in packages[package]:
+            requires += f"'{dependency}',"
+        sed(setup_file, "{{install-requires}}", requires)
+        # copy source files
+        source_dir = os.path.join(config.source_dir, 'elyra', packages_source[package])
+        dest_dir = os.path.join(package_source_dir, 'elyra', packages_source[package])
+        print(f'Copying package source from {source_dir} to {dest_dir}')
+        Path(os.path.join(package_source_dir, 'elyra')).mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_dir, dest_dir)
+
+        # build extension
+        check_run(['python', 'setup.py', 'bdist_wheel', 'sdist'], cwd=package_source_dir)
+        print('')
+
+
+def prepare_changelog() -> None:
+    """
+    Prepare a release changelog
+    """
+    global config
+    print(f'Generating changelog for release {config.new_version}')
+    print('')
+
+    # clone repository
+    checkout_code()
+    # generate changelog with new release list of commits
+    generate_changelog()
+    # commit
+    check_run(['git', 'commit', '-a', '-m', f'Update changelog for release {config.new_version}'], cwd=config.source_dir)
 
 
 def prepare_release() -> None:
@@ -375,6 +515,8 @@ def prepare_release() -> None:
 
     # clone repository
     checkout_code()
+    # generate changelog with new release list of commits
+    prepare_changelog()
     # Update to new release version
     update_version_to_release()
     # commit and tag
@@ -392,6 +534,8 @@ def prepare_release() -> None:
     check_run(['git', 'commit', '-a', '-m', f'Prepare for next development iteration'], cwd=config.source_dir)
     # prepare extensions
     prepare_extensions_release()
+    # prepare runtime extsnsions
+    prepare_runtime_extensions_package_release()
 
 
 def publish_release(working_dir) -> None:
@@ -402,6 +546,10 @@ def publish_release(working_dir) -> None:
         f'{config.source_dir}/dist/elyra-{config.new_version}.tar.gz',
         f'{config.source_dir}/dist/elyra_server-{config.new_version}-py3-none-any.whl',
         f'{config.source_dir}/dist/elyra-server-{config.new_version}.tar.gz',
+        f'{config.work_dir}/airflow-notebook/dist/airflow_notebook-{config.new_version}-py3-none-any.whl',
+        f'{config.work_dir}/airflow-notebook/dist/airflow-notebook-{config.new_version}.tar.gz',
+        f'{config.work_dir}/kfp-notebook/dist/kfp_notebook-{config.new_version}-py3-none-any.whl',
+        f'{config.work_dir}/kfp-notebook/dist/kfp-notebook-{config.new_version}.tar.gz',
         f'{config.work_dir}/elyra-code-snippet-extension/dist/elyra_code_snippet_extension-{config.new_version}-py3-none-any.whl',
         f'{config.work_dir}/elyra-code-snippet-extension/dist/elyra-code-snippet-extension-{config.new_version}.tar.gz',
         f'{config.work_dir}/elyra-pipeline-editor-extension/dist/elyra_pipeline_editor_extension-{config.new_version}-py3-none-any.whl',
@@ -461,10 +609,11 @@ def initialize_config(args=None) -> SimpleNamespace:
     if not args:
         raise ValueError("Invalid command line arguments")
 
-    v = re.search(VERSION_REG_EX, elyra.__version__)
+    v = re.search(VERSION_REG_EX, elyra._version.__version__)
 
     configuration = {
         'goal': args.goal,
+        'git_branch': GIT_BRANCH,
         'git_url': DEFAULT_GIT_URL,
         'git_extension_package_url': DEFAULT_EXTENSION_PACKAGE_GIT_URL,
         'git_hash': 'HEAD',
@@ -473,14 +622,15 @@ def initialize_config(args=None) -> SimpleNamespace:
         'base_dir': os.getcwd(),
         'work_dir': os.path.join(os.getcwd(), DEFAULT_BUILD_DIR),
         'source_dir': os.path.join(os.getcwd(), DEFAULT_BUILD_DIR, 'elyra'),
-        'old_version': elyra.__version__,
+        'old_version': elyra._version.__version__,
         'old_npm_version': f"{v['major']}.{v['minor']}.{v['patch']}-dev",
-        'new_version': args.version if not args.rc or not str.isdigit(args.rc) else f'{args.version}rc{args.rc}',
-        'new_npm_version': args.version if not args.rc or not str.isdigit(args.rc) else f'{args.version}-rc.{args.rc}',
+        'new_version': args.version if (not args.rc or not str.isdigit(args.rc)) and (not args.beta or not str.isdigit(args.beta)) else f'{args.version}rc{args.rc}' if args.rc else f'{args.version}b{args.beta}',
+        'new_npm_version': args.version if (not args.rc or not str.isdigit(args.rc)) and (not args.beta or not str.isdigit(args.beta)) else f'{args.version}-rc.{args.rc}' if args.rc else f'{args.version}-beta.{args.beta}',
         'rc': args.rc,
+        'beta': args.beta,
         'dev_version': f'{args.dev_version}.dev0',
         'dev_npm_version': f'{args.dev_version}-dev',
-        'tag': f'v{args.version}' if not args.rc or not str.isdigit(args.rc) else f'v{args.version}rc{args.rc}'
+        'tag': f'v{args.version}' if (not args.rc or not str.isdigit(args.rc)) and (not args.beta or not str.isdigit(args.beta)) else f'v{args.version}rc{args.rc}' if args.rc else f'v{args.version}b{args.beta}'
     }
 
     global config
@@ -493,7 +643,7 @@ def print_config() -> None:
     print("-----------------------------------------------------------------")
     print("--------------------- Release configuration ---------------------")
     print("-----------------------------------------------------------------")
-    print(f'Goal \t\t -> {config.goal}')
+    print(f'Goal \t\t\t -> {config.goal}')
     print(f'Git URL \t\t -> {config.git_url}')
     print(f'Git Extension URL \t -> {config.git_extension_package_url}')
     print(f'Git reference \t\t -> {config.git_hash}')
@@ -507,6 +657,10 @@ def print_config() -> None:
     print(f'New NPN Version \t -> {config.new_npm_version}')
     if config.rc is not None:
         print(f'RC number \t\t -> {config.rc}')
+    if config.beta is not None:
+        print(f'Beta number \t\t -> {config.beta}')
+    if config.git_branch is not None:
+        print(f'Branch \t\t\t -> {config.git_branch}')
     print(f'Dev Version \t\t -> {config.dev_version}')
     print(f'Dev NPM Version \t -> {config.dev_npm_version}')
     print(f'Release Tag \t\t -> {config.tag}')
@@ -521,11 +675,16 @@ def print_help() -> str:
     DESCRIPTION
     Creates Elyra release based on git commit hash or from HEAD.
     
-    create-release.py prepare --version 1.3.0 --dev-version 1.4.0 [--rc 0]
-    This form will prepare a release candidate, build it locally and push the changes to a branch for review.  
+    create release prepare-changelog --version 1.3.0 [--beta 0] [--rc 0]
+    This will prepare the release changelog and make it ready for review on the release workdir.
+
+    create-release.py prepare --version 1.3.0 --dev-version 1.4.0 [--beta 0] [--rc 0]
+    This will prepare a release candidate, build it locally and make it ready for review on the release workdir.
     
-    create-release.py publish --version 1.3.0
-    This form will build a previously prepared release, and publish the artifacts to public repositories.
+    Note: that one can either use a beta or rc modifier for the release, but not both.
+
+    create-release.py publish --version 1.3.0 [--beta 0] [--rc 0]
+    This will build a previously prepared release, and publish the artifacts to public repositories.
     
     Required software dependencies for building and publishing a release:
      - Git
@@ -544,11 +703,18 @@ def print_help() -> str:
 def main(args=None):
     """Perform necessary tasks to create and/or publish a new release"""
     parser = argparse.ArgumentParser(usage=print_help())
-    parser.add_argument('goal', help='Supported goals: {prepare | publish}', type=str, choices={'prepare', 'publish'})
+    parser.add_argument('goal', help='Supported goals: {prepare-changelog | prepare | publish}', type=str, choices={'prepare-changelog', 'prepare', 'publish'})
     parser.add_argument('--version', help='the new release version', type=str, required=True)
-    parser.add_argument('--dev-version', help='the new development version', type=str, required=False, )
-    parser.add_argument('--rc', help='the release candidate number', type=str, required=False, )
+    parser.add_argument('--dev-version', help='the new development version', type=str, required=False)
+    parser.add_argument('--beta', help='the release beta number', type=str, required=False)
+    parser.add_argument('--rc', help='the release candidate number', type=str, required=False)
     args = parser.parse_args()
+
+    # can't use both rc and beta parameters
+    if args.beta and args.rc:
+        print_help()
+        sys.exit(1)
+
 
     global config
     try:
@@ -560,18 +726,34 @@ def main(args=None):
         initialize_config(args)
         print_config()
 
-        if config.goal == 'prepare':
+        if config.goal == 'prepare-changelog':
+            prepare_changelog()
+
+            print("")
+            print("")
+            print(f"Changelog for release version: {config.new_version} is ready for review at {config.source_dir}")
+            print("After you are done, push the reviewed changelog to github.")
+            print("")
+            print("")
+        elif config.goal == 'prepare':
             if not args.dev_version:
                 print_help()
                 sys.exit()
 
             prepare_release()
 
+            print("")
+            print("")
             print(f"Release version: {config.new_version} is ready for review")
             print("After you are done, run the script again to [publish] the release.")
+            print("")
+            print("")
 
         elif args.goal == "publish":
             publish_release(working_dir=os.getcwd())
+        else:
+            print_help()
+            sys.exit()
 
     except Exception as ex:
         raise RuntimeError(f'Error performing release {args.version}') from ex

@@ -25,6 +25,22 @@ import { ExpandableErrorDialog } from './ExpandableErrorDialog';
  */
 export class RequestErrors {
   /**
+   * An utility function that takes in a json object of issues and formats them
+   * into a multiline string to be placed in the expandable error dialog.
+   *
+   * @param issues - A json object containing a list of issues
+   *
+   * @returns A human readable multiline string for displaying the issues
+   */
+  private static formatIssues(issues: any): string {
+    let formatted = '';
+    for (const issue of issues) {
+      formatted += JSON.stringify(issue, null, 2) + '\n';
+    }
+    return formatted;
+  }
+
+  /**
    * Displays an error dialog showing error data and stacktrace, if available.
    *
    * @param response - The server response containing the error data
@@ -39,8 +55,12 @@ export class RequestErrors {
     const reason = response.reason ? response.reason : '';
     const message = response.message ? response.message : '';
     const timestamp = response.timestamp ? response.timestamp : '';
-    const traceback = response.traceback ? response.traceback : '';
-    const default_body = response.timestamp
+    const traceback = response.issues
+      ? this.formatIssues(response.issues)
+      : response.traceback
+      ? response.traceback
+      : '';
+    const defaultBody = response.timestamp
       ? 'Check the JupyterLab log for more details at ' + response.timestamp
       : 'Check the JupyterLab log for more details';
 
@@ -53,10 +73,10 @@ export class RequestErrors {
             message={message}
             timestamp={timestamp}
             traceback={traceback}
-            default_msg={default_body}
+            defaultMessage={defaultBody}
           />
         ) : (
-          <p>{default_body}</p>
+          <p>{defaultBody}</p>
         ),
       buttons: [Dialog.okButton()]
     });
@@ -82,7 +102,7 @@ export class RequestErrors {
   /**
    * Displays a dialog for error cases during metadata calls.
    *
-   * @param namespace - the metadata namespace that was being accessed when
+   * @param schemaspace - the metadata schemaspace that was being accessed when
    * the error occurred
    *
    * @param action (optional) - the pipeline action that required the metadata when
@@ -92,19 +112,23 @@ export class RequestErrors {
    * @returns A promise that resolves with whether the dialog was accepted.
    */
   static noMetadataError(
-    namespace: string,
-    action?: string
+    schemaspace: string,
+    action?: string,
+    schemaName?: string
   ): Promise<Dialog.IResult<any>> {
     return showDialog({
       title: action ? `Cannot ${action}` : 'Error retrieving metadata',
       body: (
         <div>
-          <p>No {namespace} configuration is defined.</p>
+          <p>
+            No {schemaspace} configuration{schemaName && ` for ${schemaName}`}{' '}
+            is defined.
+          </p>
           <p>Please create one and try again.</p>
         </div>
       ),
       buttons:
-        namespace === 'runtime'
+        schemaspace === 'runtime'
           ? [Dialog.cancelButton(), Dialog.okButton({ label: `Open runtimes` })]
           : [Dialog.okButton()]
     });

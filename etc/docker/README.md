@@ -16,10 +16,7 @@ limitations under the License.
 {% endcomment %}
 -->
 
-This directory root contains Dockerfiles and required supporting files needed to build custom images for use with Elyra. 
-
-### airflow
-Builds the Apache Airflow image with the [airflow-notebook](https://github.com/elyra-ai/airflow-notebook) package pre-installed.
+This directory root contains Dockerfiles and required supporting files needed to build custom images for use with Elyra.
 
 ### elyra
 Builds the Elyra image for use as standalone or with JupyterHub. See [Deploying Elyra and JupyterHub in a Kubernetes environment](https://elyra.readthedocs.io/en/latest/recipes/deploying-elyra-in-a-jupyterhub-environment.html#deploying-elyra-jupyterhub-in-a-kubernetes-environment)
@@ -28,7 +25,7 @@ Builds the Elyra image for use as standalone or with JupyterHub. See [Deploying 
 Elyra on OpenShift is available via Open Data Hub. Elyra Image is available via [quay.io](https://quay.io/repository/thoth-station/s2i-lab-elyra?tab=tags) and supporting image build files via [s2i-lab-elyra](https://github.com/opendatahub-io/s2i-lab-elyra)
 
 ### kubeflow (Open Data Hub)
-Build the Elyra image for use with Kubeflow's Notebook Server.  See [Using Elyra with the Kubeflow Notebook Server](https://elyra.readthedocs.io/en/latest/recipes/using-elyra-with-kubeflow-notebook-server.html)
+Build the Elyra image for use with Kubeflow's Notebook Server. This image includes all kfp dependencies (i.e. kfp, kfp-tekton). See [Using Elyra with the Kubeflow Notebook Server](https://elyra.readthedocs.io/en/latest/recipes/using-elyra-with-kubeflow-notebook-server.html)
 
 ### tensorflow
 Builds custom tensorflow v1.15.2 runtime images for use with Elyra, one with GPU libraries and support and one without.   

@@ -21,7 +21,8 @@ import React from 'react';
 interface IFilterMetadataProps {
   tags: string[];
   onFilter: (searchValue: string, filterTags: string[]) => void;
-  namespaceId: string;
+  schemaspace: string;
+  omitTags?: boolean;
 }
 
 interface IFilterMetadataState {
@@ -33,6 +34,7 @@ interface IFilterMetadataState {
 const FILTER_OPTION = 'elyra-filter-option';
 const FILTER_TAGS = 'elyra-filter-tags';
 const FILTER_TAG = 'elyra-filter-tag';
+const FILTER_TAG_LABEL = 'elyra-filter-tag-label';
 const FILTER_CHECK = 'elyra-filter-check';
 const FILTER_TOOLS = 'elyra-filterTools';
 const FILTER_SEARCHBAR = 'elyra-searchbar';
@@ -77,10 +79,10 @@ export class FilterTools extends React.Component<
 
   createFilterBox(): void {
     const filterOption = document.querySelector(
-      `#${this.props.namespaceId} .${FILTER_OPTION}`
+      `#${this.props.schemaspace} .${FILTER_OPTION}`
     );
 
-    filterOption.classList.toggle('idle');
+    filterOption?.classList.toggle('idle');
 
     this.filterMetadata();
   }
@@ -112,9 +114,10 @@ export class FilterTools extends React.Component<
         className={`${FILTER_TAG} tag applied-tag`}
         id={'filter' + '-' + tag + '-' + index}
         key={'filter' + '-' + tag + '-' + index}
+        title={tag}
         onClick={this.handleClick}
       >
-        {tag}
+        <span className={FILTER_TAG_LABEL}>{tag}</span>
         <checkIcon.react
           className={FILTER_CHECK}
           tag="span"
@@ -134,16 +137,17 @@ export class FilterTools extends React.Component<
         className={`${FILTER_TAG} tag unapplied-tag`}
         id={'filter' + '-' + tag + '-' + index}
         key={'filter' + '-' + tag + '-' + index}
+        title={tag}
         onClick={this.handleClick}
       >
-        {tag}
+        <span className={FILTER_TAG_LABEL}>{tag}</span>
       </button>
     );
   }
 
   handleClick(event: React.MouseEvent<HTMLButtonElement, MouseEvent>): void {
     const target = event.target as HTMLElement;
-    const clickedTag = target.innerText.trim();
+    const clickedTag = target.textContent ?? '';
 
     this.setState(
       state => ({
@@ -177,8 +181,8 @@ export class FilterTools extends React.Component<
 
   filterMetadata(): void {
     const isTagFilterOpen = document
-      .querySelector(`#${this.props.namespaceId} .${FILTER_OPTION}`)
-      .classList.contains('idle');
+      .querySelector(`#${this.props.schemaspace} .${FILTER_OPTION}`)
+      ?.classList.contains('idle');
     this.props.onFilter(
       this.state.searchValue,
       isTagFilterOpen ? [] : this.state.selectedTags
@@ -202,16 +206,20 @@ export class FilterTools extends React.Component<
             value={this.state.searchValue}
           />
         </div>
-        <div className={FILTER_CLASS} id={this.props.namespaceId}>
-          <button
-            title="Filter by tag"
-            className={FILTER_BUTTON}
-            onClick={this.createFilterBox}
-          >
-            <tagIcon.react />
-          </button>
-          {this.renderFilterOption()}
-        </div>
+        {this.props.omitTags ? (
+          <div style={{ height: '4px' }} />
+        ) : (
+          <div className={FILTER_CLASS} id={this.props.schemaspace}>
+            <button
+              title="Filter by tag"
+              className={FILTER_BUTTON}
+              onClick={this.createFilterBox}
+            >
+              <tagIcon.react />
+            </button>
+            {this.renderFilterOption()}
+          </div>
+        )}
       </div>
     );
   }

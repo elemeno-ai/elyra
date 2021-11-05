@@ -75,10 +75,12 @@ Refer to the topics below for detailed information on how to use `elyra-metadata
  - [Manage code snippets](code-snippets.html#managing-code-snippets-using-the-elyra-cli)
  - [Manage runtime configurations](runtime-conf.html#managing-runtime-configurations-using-the-elyra-cli)
  - [Manage runtime images](runtime-image-conf.html#managing-runtime-images-with-the-command-line-interface)
+ - [Manage pipeline components](pipeline-components.html#managing-custom-components-using-the-elyra-cli)
 
 ### Working with pipelines
 
-In Elyra, [a pipeline](https://elyra.readthedocs.io/en/latest/user_guide/pipelines.html) is a representation of a workflow that you run locally or remotely on Kubeflow Pipelines or Apache Airflow.
+In Elyra, [a pipeline](pipelines.md) is a representation of a
+workflow that you run locally or remotely on Kubeflow Pipelines or Apache Airflow.
 
 #### Getting help
 
@@ -96,7 +98,6 @@ $ elyra-pipeline run --help
 #### Running pipelines
 
 Refer to the topics below for detailed information on how to use `elyra-pipeline` to
- - [Run a pipeline locally](pipelines.md#running-a-pipeline-using-the-command-line)
- - [Submit a pipeline for remote execution](pipelines.md#running-a-pipeline-using-the-command-line)
-
-
+ - [Display pipeline information summary](pipelines.html#running-a-pipeline-using-the-command-line)
+ - [Run a pipeline locally](pipelines.html#running-a-pipeline-using-the-command-line)
+ - [Submit a pipeline for remote execution](pipelines.html#running-a-pipeline-using-the-command-line)

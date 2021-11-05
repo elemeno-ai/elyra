@@ -14,17 +14,22 @@
 # limitations under the License.
 #
 import os
-from minio import Minio
-from minio.error import ResponseError, BucketAlreadyOwnedByYou, BucketAlreadyExists
+from pathlib import Path
 from urllib.parse import urlparse
+
+from minio.api import Minio
+from minio.error import BucketAlreadyExists
+from minio.error import BucketAlreadyOwnedByYou
+from minio.error import ResponseError
+from minio.error import SignatureDoesNotMatch
 from traitlets.config import LoggingConfigurable
 
 
 class CosClient(LoggingConfigurable):
     client = None
 
-    def __init__(self, config=None, endpoint=None, access_key=None, secret_key=None, bucket=None):
-        super().__init__()
+    def __init__(self, config=None, endpoint=None, access_key=None, secret_key=None, bucket=None, **kwargs):
+        super().__init__(**kwargs)
         if config:
             self.endpoint = urlparse(config.metadata['cos_endpoint'])
             self.access_key = config.metadata['cos_username']
@@ -61,6 +66,9 @@ class CosClient(LoggingConfigurable):
         except ResponseError as ex:
             self.log.error("Object Storage error", exc_info=True)
             raise ex from ex
+        except SignatureDoesNotMatch as ex:
+            self.log.error("Incorrect Object Storage credentials supplied")
+            raise ex from ex
 
         return self.client
 
@@ -90,7 +98,9 @@ class CosClient(LoggingConfigurable):
         :param file_path: Path on the local filesystem from which object data will be read.
         :return:
         """
-        self.upload_file(os.path.join(dir, file_name), file_path)
+        # elyra-320 -> always use posix path as this is targeting COS filesystem
+        location = Path(os.path.join(dir, file_name))
+        self.upload_file(location.as_posix(), file_path)
 
     def download_file(self, file_name, file_path):
         """

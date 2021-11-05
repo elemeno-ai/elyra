@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { NotebookParser } from '@elyra/services';
+import { ContentParser } from '@elyra/services';
 import { RequestErrors, showFormDialog } from '@elyra/ui-components';
 import { Dialog, showDialog, ToolbarButton } from '@jupyterlab/apputils';
 import { DocumentRegistry } from '@jupyterlab/docregistry';
@@ -25,7 +25,7 @@ import * as React from 'react';
 
 import { FileSubmissionDialog } from './FileSubmissionDialog';
 import { formDialogWidget } from './formDialogWidget';
-import { PipelineService, RUNTIMES_NAMESPACE } from './PipelineService';
+import { PipelineService, RUNTIMES_SCHEMASPACE } from './PipelineService';
 import Utils from './utils';
 
 /**
@@ -37,7 +37,7 @@ import Utils from './utils';
 export class SubmitNotebookButtonExtension
   implements DocumentRegistry.IWidgetExtension<NotebookPanel, INotebookModel> {
   showWidget = async (panel: NotebookPanel): Promise<void> => {
-    if (panel.model.dirty) {
+    if (panel.model?.dirty) {
       const dialogResult = await showDialog({
         title:
           'This notebook contains unsaved changes. To run the notebook as pipeline the changes need to be saved.',
@@ -54,7 +54,9 @@ export class SubmitNotebookButtonExtension
       }
     }
 
-    const env = NotebookParser.getEnvVars(panel.content.model.toString());
+    const env = await ContentParser.getEnvVars(
+      panel.context.path.toString()
+    ).catch(error => RequestErrors.serverError(error));
     const action = 'run notebook as pipeline';
     const runtimes = await PipelineService.getRuntimes(
       true,
@@ -62,10 +64,10 @@ export class SubmitNotebookButtonExtension
     ).catch(error => RequestErrors.serverError(error));
 
     if (Utils.isDialogResult(runtimes)) {
-      if (runtimes.button.label.includes(RUNTIMES_NAMESPACE)) {
+      if (runtimes.button.label.includes(RUNTIMES_SCHEMASPACE)) {
         // Open the runtimes widget
         Utils.getLabShell(panel).activateById(
-          `elyra-metadata:${RUNTIMES_NAMESPACE}`
+          `elyra-metadata:${RUNTIMES_SCHEMASPACE}`
         );
       }
       return;
@@ -117,7 +119,7 @@ export class SubmitNotebookButtonExtension
       runtime_platform,
       runtime_config,
       framework,
-      dependency_include ? dependencies : undefined,
+      dependency_include ? dependencies.split(',') : undefined,
       envObject,
       cpu,
       gpu,

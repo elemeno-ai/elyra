@@ -13,17 +13,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+from typing import Dict
+from typing import List
+from typing import Optional
+
 from traitlets.config import LoggingConfigurable
-from typing import Any, Dict, List, Optional
 
-from .pipeline import Pipeline, Operation
-
-DEFAULT_FILETYPE = "tar.gz"
+from elyra.pipeline.pipeline import Operation
+from elyra.pipeline.pipeline import Pipeline
+from elyra.pipeline.pipeline_definition import Node
+from elyra.pipeline.pipeline_definition import PipelineDefinition
 
 
 class PipelineParser(LoggingConfigurable):
 
-    def parse(self, pipeline_definitions: Dict) -> Pipeline:
+    def __init__(self, root_dir="", **kwargs):
+        super().__init__(**kwargs)
+        self.root_dir = root_dir
+
+    def parse(self, pipeline_json: Dict) -> Pipeline:
         """
         The pipeline definitions allow for defining multiple pipelines  in one json file.
         When super_nodes are used, their node actually references another pipeline in the
@@ -31,48 +39,38 @@ class PipelineParser(LoggingConfigurable):
         list of operations.
         """
 
-        # Check for required values.  We require a primary_pipeline, a set of pipelines, and
-        # nodes within the primary pipeline (checked below).
-        if 'primary_pipeline' not in pipeline_definitions:
-            raise ValueError("Invalid pipeline: Could not determine the primary pipeline.")
-        if not isinstance(pipeline_definitions["primary_pipeline"], str):
-            raise ValueError("Invalid pipeline: Field 'primary_pipeline' should be a string.")
-        if 'pipelines' not in pipeline_definitions:
-            raise ValueError("Invalid pipeline: Pipeline definition not found.")
-        if not isinstance(pipeline_definitions["pipelines"], list):
-            raise ValueError("Invalid pipeline: Field 'pipelines' should be a list.")
-
-        primary_pipeline_id = pipeline_definitions['primary_pipeline']
-        primary_pipeline = PipelineParser._get_pipeline_definition(pipeline_definitions, primary_pipeline_id)
-        if not primary_pipeline:
-            raise ValueError("Invalid pipeline: Primary pipeline '{}' not found.".format(primary_pipeline_id))
+        try:
+            pipeline_definition = PipelineDefinition(pipeline_definition=pipeline_json)
+            primary_pipeline = pipeline_definition.primary_pipeline
+        except Exception as e:
+            raise ValueError(f"Invalid Pipeline: {e}")
 
         # runtime info is only present on primary pipeline...
-        runtime = PipelineParser._get_app_data_field(primary_pipeline, 'runtime')
+        runtime = primary_pipeline.runtime
         if not runtime:
             raise ValueError("Invalid pipeline: Missing runtime.")
-        runtime_config = PipelineParser._get_app_data_field(primary_pipeline, 'runtime-config')
+        runtime_config = primary_pipeline.runtime_config
         if not runtime_config:
             raise ValueError("Invalid pipeline: Missing runtime configuration.")
 
-        if 'nodes' not in primary_pipeline or len(primary_pipeline['nodes']) == 0:
-            raise ValueError("Invalid pipeline: At least one node must exist in the primary pipeline.")
+        source = primary_pipeline.source
 
-        source = PipelineParser._get_app_data_field(primary_pipeline, 'source')
+        description = primary_pipeline.get_property('description')
 
-        pipeline_object = Pipeline(id=id,
-                                   name=PipelineParser._get_app_data_field(primary_pipeline, 'name', 'untitled'),
+        pipeline_object = Pipeline(id=primary_pipeline.id,
+                                   name=primary_pipeline.name,
                                    runtime=runtime,
                                    runtime_config=runtime_config,
-                                   source=source)
-        self._nodes_to_operations(pipeline_definitions, pipeline_object, primary_pipeline['nodes'])
+                                   source=source,
+                                   description=description)
+        self._nodes_to_operations(pipeline_definition, pipeline_object, primary_pipeline.nodes)
         return pipeline_object
 
     def _nodes_to_operations(self,
-                             pipeline_definitions: Dict,
+                             pipeline_definition: PipelineDefinition,
                              pipeline_object: Pipeline,
-                             nodes: List[Dict],
-                             super_node: Optional[Dict] = None) -> None:
+                             nodes: List[Node],
+                             super_node: Optional[Node] = None) -> None:
         """
         Converts each execution_node of the pipeline to its corresponding operation.
 
@@ -88,94 +86,51 @@ class PipelineParser(LoggingConfigurable):
         """
         for node in nodes:
             # Super_nodes trigger recursion
-            node_type = node.get('type')
-            if node_type == "super_node":
-                self._super_node_to_operations(pipeline_definitions, pipeline_object, node)
+            if node.type == "super_node":
+                self._super_node_to_operations(pipeline_definition, node, pipeline_object, node)
                 continue  # skip to next node
-            elif node_type == "binding":  # We can ignore binding nodes since we're able to determine links w/o
+            elif node.type == "binding":  # We can ignore binding nodes since we're able to determine links w/o
                 continue
-            elif node_type == "model_node":
-                raise NotImplementedError("Node type '{}' is currently not supported!".format(node_type))
-            elif node_type != "execution_node":
-                raise ValueError("Node type '{}' is invalid!".format(node_type))
+            elif node.type == "model_node":
+                raise NotImplementedError("Node type '{}' is currently not supported!".format(node.type))
+            elif node.type != "execution_node":
+                raise ValueError("Node type '{}' is invalid!".format(node.type))
 
             # parse each node as a pipeline operation
-            operation = PipelineParser._create_pipeline_operation(node, super_node)
-            self.log.debug("Adding operation for '{}' to pipeline: {}".format(operation.filename, pipeline_object.name))
+            operation = self._create_pipeline_operation(node, super_node)
+            self.log.debug("Adding operation for '{}' to pipeline: {}".format(operation.name, pipeline_object.name))
             pipeline_object.operations[operation.id] = operation
 
     def _super_node_to_operations(self,
-                                  pipeline_definitions: Dict,
+                                  pipeline_definition: PipelineDefinition,
+                                  node: Node,
                                   pipeline_object: Pipeline,
-                                  super_node: Dict) -> None:
+                                  super_node: Node) -> None:
         """Converts nodes within a super_node to operations. """
 
         # get pipeline corresponding to super_node
-        pipeline_id = PipelineParser._get_child_field(super_node, 'subflow_ref', 'pipeline_id_ref')
-        pipeline = PipelineParser._get_pipeline_definition(pipeline_definitions, pipeline_id)
+        pipeline_id = node.subflow_pipeline_id
+        pipeline = pipeline_definition.get_pipeline_definition(pipeline_id)
         # recurse to process nodes of super-node
-        return self._nodes_to_operations(pipeline_definitions, pipeline_object, pipeline['nodes'], super_node)
+        return self._nodes_to_operations(pipeline_definition, pipeline_object, pipeline.nodes, super_node)
 
-    @staticmethod
-    def _get_pipeline_definition(pipeline_definitions: Dict, pipeline_id: str) -> [Dict, None]:
-        """
-        Locates the pipeline corresponding to pipeline_id in the definitions and returns that definition.
-        If the pipeline cannot be located, None is returned.
-        """
-        for p in pipeline_definitions['pipelines']:
-            if p['id'] == pipeline_id:
-                return p
-        return None
-
-    @staticmethod
-    def _create_pipeline_operation(node: Dict, super_node: Optional[Dict] = None):
+    def _create_pipeline_operation(self, node: Node, super_node: Node = None) -> Operation:
         """
         Creates a pipeline operation instance from the given node.
-        The node and super_node are used to build the list of parent_operations (links) to
+        The node and super_node are used to build the list of parent_operation_ids (links) to
         the node (operation dependencies).
         """
-        node_id = node.get('id')
-        parent_operations = PipelineParser._get_parent_operation_links(node)  # parse links as dependencies
+        parent_operations = PipelineParser._get_parent_operation_links(node.to_dict())  # parse links as dependencies
         if super_node:  # gather parent-links tied to embedded nodes inputs
-            parent_operations.extend(PipelineParser._get_parent_operation_links(super_node, node_id))
+            parent_operations.extend(PipelineParser._get_parent_operation_links(super_node.to_dict(), node.id))
 
-        return Operation(
-            id=node_id,
-            type=node.get('type'),
-            classifier=node.get('op'),
-            name=PipelineParser._get_ui_data_field(node, 'label',
-                                                   default_value=PipelineParser._get_app_data_field(node, 'filename')),
-            cpu=PipelineParser._get_app_data_field(node, 'cpu'),
-            gpu=PipelineParser._get_app_data_field(node, 'gpu'),
-            memory=PipelineParser._get_app_data_field(node, 'memory'),
-            filename=PipelineParser._get_app_data_field(node, 'filename'),
-            runtime_image=PipelineParser._get_app_data_field(node, 'runtime_image'),
-            dependencies=PipelineParser._scrub_list(PipelineParser._get_app_data_field(node, 'dependencies', [])),
-            include_subdirectories=PipelineParser._get_app_data_field(node, 'include_subdirectories', False),
-            env_vars=PipelineParser._scrub_list(PipelineParser._get_app_data_field(node, 'env_vars', [])),
-            outputs=PipelineParser._scrub_list(PipelineParser._get_app_data_field(node, 'outputs', [])),
-            parent_operations=parent_operations)
-
-    @staticmethod
-    def _get_child_field(obj: Dict, child: str, field_name: str, default_value: Any = None) -> Any:
-        """
-        Returns the field's value from the child dictionary of object obj or the default
-        if any portion (child, field) is not present.
-        """
-        return_value = default_value
-        if child in obj.keys():
-            return_value = obj[child].get(field_name, default_value)
-        return return_value
-
-    @staticmethod
-    def _get_app_data_field(obj: Dict, field_name: str, default_value: Any = None) -> Any:
-        """Helper method to pull the field's value from the app_data child of object obj."""
-        return PipelineParser._get_child_field(obj, 'app_data', field_name, default_value=default_value)
-
-    @staticmethod
-    def _get_ui_data_field(obj: Dict, field_name: str, default_value: Any = None) -> Any:
-        ui_data = PipelineParser._get_child_field(obj, 'app_data', 'ui_data', {})
-        return ui_data.get(field_name, default_value)
+        return Operation.create_instance(
+            id=node.id,
+            type=node.type,
+            classifier=node.op,
+            name=node.label,
+            parent_operation_ids=parent_operations,
+            component_params=node.get("component_parameters", {}))
 
     @staticmethod
     def _get_port_node_id(link: Dict) -> [None, str]:
@@ -208,7 +163,7 @@ class PipelineParser(LoggingConfigurable):
         return input_node_ids
 
     @staticmethod
-    def _get_parent_operation_links(node: Dict, embedded_node_id: Optional[str] = None) -> List[List[str]]:
+    def _get_parent_operation_links(node: Dict, embedded_node_id: Optional[str] = None) -> List[str]:
         """
         Gets a list nodes_ids corresponding to parent nodes (outputs directed to this node).
         For super_nodes, the node to use has an id of the embedded_node_id suffixed with '_inPort'.
@@ -223,14 +178,3 @@ class PipelineParser(LoggingConfigurable):
                 else:
                     links.extend(PipelineParser._get_input_node_ids(node_input))
         return links
-
-    @staticmethod
-    def _scrub_list(dirty: Optional[List[Optional[str]]]) -> List[str]:
-        """
-        Clean an existing list by filtering out None and empty string values
-        :param dirty: a List of values
-        :return: a clean list without None or empty string values
-        """
-        if not dirty:
-            return []
-        return [clean for clean in dirty if clean]

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// import { NotebookParser } from '@elyra/services';
+import { ContentParser } from '@elyra/services';
 import { RequestErrors, showFormDialog } from '@elyra/ui-components';
 import { Dialog, showDialog, ToolbarButton } from '@jupyterlab/apputils';
 import { PathExt } from '@jupyterlab/coreutils';
@@ -26,7 +26,7 @@ import * as React from 'react';
 
 import { FileSubmissionDialog } from './FileSubmissionDialog';
 import { formDialogWidget } from './formDialogWidget';
-import { PipelineService, RUNTIMES_NAMESPACE } from './PipelineService';
+import { PipelineService, RUNTIMES_SCHEMASPACE } from './PipelineService';
 import Utils from './utils';
 
 /**
@@ -60,13 +60,9 @@ export class SubmitScriptButtonExtension
       }
     }
 
-    /*
-    // TODO:
-    // get environment variables from the editor
-    // Rename NotebookParser to ContentParser in from '@elyra/services and adjust getEnvVars according to widget type
-    */
-    // const env = this.getEnvVars(editor.context.model.toString());
-    const env: string[] = [];
+    const env = await ContentParser.getEnvVars(
+      editor.context.path.toString()
+    ).catch(error => RequestErrors.serverError(error));
     const action = 'run script as pipeline';
     const runtimes = await PipelineService.getRuntimes(
       true,
@@ -74,10 +70,10 @@ export class SubmitScriptButtonExtension
     ).catch(error => RequestErrors.serverError(error));
 
     if (Utils.isDialogResult(runtimes)) {
-      if (runtimes.button.label.includes(RUNTIMES_NAMESPACE)) {
+      if (runtimes.button.label.includes(RUNTIMES_SCHEMASPACE)) {
         // Open the runtimes widget
         Utils.getLabShell(editor).activateById(
-          `elyra-metadata:${RUNTIMES_NAMESPACE}`
+          `elyra-metadata:${RUNTIMES_SCHEMASPACE}`
         );
       }
       return;
@@ -130,7 +126,7 @@ export class SubmitScriptButtonExtension
       runtime_platform,
       runtime_config,
       framework,
-      dependency_include ? dependencies : undefined,
+      dependency_include ? dependencies.split(',') : undefined,
       envObject,
       cpu,
       gpu,

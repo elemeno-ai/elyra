@@ -33,7 +33,7 @@ import { Notebook, NotebookPanel } from '@jupyterlab/notebook';
 import { Widget } from '@lumino/widgets';
 
 import {
-  CODE_SNIPPET_NAMESPACE,
+  CODE_SNIPPET_SCHEMASPACE,
   CODE_SNIPPET_SCHEMA
 } from './CodeSnippetService';
 import { CodeSnippetWidget } from './CodeSnippetWidget';
@@ -57,11 +57,11 @@ export const code_snippet_extension: JupyterFrontEndPlugin<void> = {
     palette: ICommandPalette,
     restorer: ILayoutRestorer,
     editorServices: IEditorServices,
-    themeManager: IThemeManager | null
+    themeManager?: IThemeManager
   ) => {
     console.log('Elyra - code-snippet extension is activated!');
 
-    const getCurrentWidget = (): Widget => {
+    const getCurrentWidget = (): Widget | null => {
       return app.shell.currentWidget;
     };
 
@@ -69,13 +69,13 @@ export const code_snippet_extension: JupyterFrontEndPlugin<void> = {
       app,
       themeManager,
       display_name: 'Code Snippets',
-      namespace: CODE_SNIPPET_NAMESPACE,
+      schemaspace: CODE_SNIPPET_SCHEMASPACE,
       schema: CODE_SNIPPET_SCHEMA,
       icon: codeSnippetIcon,
       getCurrentWidget,
       editorServices
     });
-    const codeSnippetWidgetId = `elyra-metadata:${CODE_SNIPPET_NAMESPACE}`;
+    const codeSnippetWidgetId = `elyra-metadata:${CODE_SNIPPET_SCHEMASPACE}`;
     codeSnippetWidget.id = codeSnippetWidgetId;
     codeSnippetWidget.title.icon = codeSnippetIcon;
     codeSnippetWidget.title.caption = 'Code Snippets';
@@ -96,7 +96,7 @@ export const code_snippet_extension: JupyterFrontEndPlugin<void> = {
         if (editor) {
           selection = getTextSelection(editor);
         } else if (isMarkdownDocument(currentWidget)) {
-          selection = document.getSelection().toString();
+          selection = document.getSelection()?.toString() ?? '';
         }
 
         if (selection) {
@@ -113,12 +113,12 @@ export const code_snippet_extension: JupyterFrontEndPlugin<void> = {
         if (editor) {
           selection = getTextSelection(editor);
         } else if (isMarkdownDocument(currentWidget)) {
-          selection = document.getSelection().toString();
+          selection = document.getSelection()?.toString() ?? '';
         }
 
         if (selection) {
           codeSnippetWidget.openMetadataEditor({
-            namespace: CODE_SNIPPET_NAMESPACE,
+            schemaspace: CODE_SNIPPET_SCHEMASPACE,
             schema: CODE_SNIPPET_SCHEMA,
             code: selection.split('\n'),
             onSave: codeSnippetWidget.updateMetadata
@@ -153,7 +153,7 @@ export const code_snippet_extension: JupyterFrontEndPlugin<void> = {
 
       if (!selection && editor.model.value.text) {
         // Allow selections from a rendered notebook cell
-        return document.getSelection().toString();
+        return document.getSelection()?.toString() ?? '';
       }
 
       return selection;
@@ -181,7 +181,7 @@ export const code_snippet_extension: JupyterFrontEndPlugin<void> = {
       } else if (isNotebookEditor(currentWidget)) {
         const notebookWidget = currentWidget as NotebookPanel;
         const notebookCell = (notebookWidget.content as Notebook).activeCell;
-        return notebookCell.editor;
+        return notebookCell?.editor;
       }
     };
   }

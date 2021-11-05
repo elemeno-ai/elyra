@@ -13,27 +13,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
 from jsonschema import ValidationError
 from jupyter_server.base.handlers import APIHandler
-from jupyter_server.utils import url_unescape, url_path_join
+from jupyter_server.utils import url_path_join
+from jupyter_server.utils import url_unescape
 from tornado import web
 
-from .error import MetadataNotFoundError, MetadataExistsError, SchemaNotFoundError
-from .metadata import Metadata
-from .manager import MetadataManager
-from .schema import SchemaManager
-from ..util.http import HttpErrorMixin
+from elyra.metadata.error import MetadataExistsError
+from elyra.metadata.error import MetadataNotFoundError
+from elyra.metadata.error import SchemaNotFoundError
+from elyra.metadata.manager import MetadataManager
+from elyra.metadata.metadata import Metadata
+from elyra.metadata.schema import SchemaManager
+from elyra.util.http import HttpErrorMixin
 
 
 class MetadataHandler(HttpErrorMixin, APIHandler):
     """Handler for metadata configurations collection. """
 
     @web.authenticated
-    async def get(self, namespace):
-        namespace = url_unescape(namespace)
+    async def get(self, schemaspace):
+        schemaspace = url_unescape(schemaspace)
+        parent = self.settings.get('elyra')
         try:
-            metadata_manager = MetadataManager(namespace=namespace)
+            metadata_manager = MetadataManager(schemaspace=schemaspace, parent=parent)
             metadata = metadata_manager.get_all()
         except (ValidationError, ValueError) as err:
             raise web.HTTPError(400, str(err)) from err
@@ -42,20 +45,20 @@ class MetadataHandler(HttpErrorMixin, APIHandler):
         except Exception as err:
             raise web.HTTPError(500, repr(err)) from err
 
-        metadata_model = dict()
-        metadata_model[namespace] = [r.to_dict(trim=True) for r in metadata]
+        metadata_model = {schemaspace: [r.to_dict(trim=True) for r in metadata]}
         self.set_header("Content-Type", 'application/json')
         self.finish(metadata_model)
 
     @web.authenticated
-    async def post(self, namespace):
+    async def post(self, schemaspace):
 
-        namespace = url_unescape(namespace)
+        schemaspace = url_unescape(schemaspace)
+        parent = self.settings.get('elyra')
         try:
-            instance = self._validate_body(namespace)
-            self.log.debug("MetadataHandler: Creating metadata instance '{}' in namespace '{}'...".
-                           format(instance.name, namespace))
-            metadata_manager = MetadataManager(namespace=namespace)
+            instance = self._validate_body(schemaspace)
+            self.log.debug("MetadataHandler: Creating metadata instance '{}' in schemaspace '{}'...".
+                           format(instance.name, schemaspace))
+            metadata_manager = MetadataManager(schemaspace=schemaspace, parent=parent)
             metadata = metadata_manager.create(instance.name, instance)
         except (ValidationError, ValueError, SyntaxError) as err:
             raise web.HTTPError(400, str(err)) from err
@@ -68,11 +71,11 @@ class MetadataHandler(HttpErrorMixin, APIHandler):
 
         self.set_status(201)
         self.set_header("Content-Type", 'application/json')
-        location = url_path_join(self.base_url, 'elyra', 'metadata', namespace, metadata.name)
+        location = url_path_join(self.base_url, 'elyra', 'metadata', schemaspace, metadata.name)
         self.set_header('Location', location)
         self.finish(metadata.to_dict(trim=True))
 
-    def _validate_body(self, namespace: str):
+    def _validate_body(self, schemaspace: str):
         """Validates the body issued for creates. """
         body = self.get_json_body()
 
@@ -91,7 +94,7 @@ class MetadataHandler(HttpErrorMixin, APIHandler):
                 )
             )
 
-        instance = Metadata.from_dict(namespace, {**body})
+        instance = Metadata.from_dict(schemaspace, {**body})
         return instance
 
 
@@ -99,12 +102,13 @@ class MetadataResourceHandler(HttpErrorMixin, APIHandler):
     """Handler for metadata configuration specific resource (e.g. a runtime element). """
 
     @web.authenticated
-    async def get(self, namespace, resource):
-        namespace = url_unescape(namespace)
+    async def get(self, schemaspace, resource):
+        schemaspace = url_unescape(schemaspace)
         resource = url_unescape(resource)
+        parent = self.settings.get('elyra')
 
         try:
-            metadata_manager = MetadataManager(namespace=namespace)
+            metadata_manager = MetadataManager(schemaspace=schemaspace, parent=parent)
             metadata = metadata_manager.get(resource)
         except (ValidationError, ValueError, NotImplementedError) as err:
             raise web.HTTPError(400, str(err)) from err
@@ -117,22 +121,23 @@ class MetadataResourceHandler(HttpErrorMixin, APIHandler):
         self.finish(metadata.to_dict(trim=True))
 
     @web.authenticated
-    async def put(self, namespace, resource):
-        namespace = url_unescape(namespace)
+    async def put(self, schemaspace, resource):
+        schemaspace = url_unescape(schemaspace)
         resource = url_unescape(resource)
+        parent = self.settings.get('elyra')
 
         try:
             payload = self.get_json_body()
             # Get the current resource to ensure its pre-existence
-            metadata_manager = MetadataManager(namespace=namespace)
+            metadata_manager = MetadataManager(schemaspace=schemaspace, parent=parent)
             metadata_manager.get(resource)
             # Check if name is in the payload and varies from resource, if so, raise 400
             if 'name' in payload and payload['name'] != resource:
                 raise NotImplementedError("The attempt to rename instance '{}' to '{}' is not supported.".
                                           format(resource, payload['name']))
-            instance = Metadata.from_dict(namespace, {**payload})
-            self.log.debug("MetadataHandler: Updating metadata instance '{}' in namespace '{}'...".
-                           format(resource, namespace))
+            instance = Metadata.from_dict(schemaspace, {**payload})
+            self.log.debug("MetadataHandler: Updating metadata instance '{}' in schemaspace '{}'...".
+                           format(resource, schemaspace))
             metadata = metadata_manager.update(resource, instance)
         except (ValidationError, ValueError, NotImplementedError) as err:
             raise web.HTTPError(400, str(err)) from err
@@ -146,14 +151,15 @@ class MetadataResourceHandler(HttpErrorMixin, APIHandler):
         self.finish(metadata.to_dict(trim=True))
 
     @web.authenticated
-    async def delete(self, namespace, resource):
-        namespace = url_unescape(namespace)
+    async def delete(self, schemaspace, resource):
+        schemaspace = url_unescape(schemaspace)
         resource = url_unescape(resource)
+        parent = self.settings.get('elyra')
 
         try:
-            self.log.debug("MetadataHandler: Deleting metadata instance '{}' in namespace '{}'...".
-                           format(resource, namespace))
-            metadata_manager = MetadataManager(namespace=namespace)
+            self.log.debug("MetadataHandler: Deleting metadata instance '{}' in schemaspace '{}'...".
+                           format(resource, schemaspace))
+            metadata_manager = MetadataManager(schemaspace=schemaspace, parent=parent)
             metadata_manager.remove(resource)
         except (ValidationError, ValueError) as err:
             raise web.HTTPError(400, str(err)) from err
@@ -169,35 +175,36 @@ class MetadataResourceHandler(HttpErrorMixin, APIHandler):
 
 
 class SchemaHandler(HttpErrorMixin, APIHandler):
-    """Handler for namespace schemas. """
+    """Handler for schemaspace schemas. """
 
     @web.authenticated
-    async def get(self, namespace):
-        namespace = url_unescape(namespace)
-        schema_manager = SchemaManager()
+    async def get(self, schemaspace):
+        schemaspace = url_unescape(schemaspace)
+
         try:
-            schemas = schema_manager.get_namespace_schemas(namespace)
+            schema_manager = SchemaManager.instance()
+            schemas = schema_manager.get_schemaspace_schemas(schemaspace)
         except (ValidationError, ValueError, SchemaNotFoundError) as err:
             raise web.HTTPError(404, str(err)) from err
         except Exception as err:
             raise web.HTTPError(500, repr(err)) from err
 
-        schemas_model = dict()
-        schemas_model[namespace] = list(schemas.values())
+        schemas_model = {schemaspace: list(schemas.values())}
         self.set_header("Content-Type", 'application/json')
         self.finish(schemas_model)
 
 
 class SchemaResourceHandler(HttpErrorMixin, APIHandler):
-    """Handler for a specific schema (resource) for a given namespace. """
+    """Handler for a specific schema (resource) for a given schemaspace. """
 
     @web.authenticated
-    async def get(self, namespace, resource):
-        namespace = url_unescape(namespace)
+    async def get(self, schemaspace, resource):
+        schemaspace = url_unescape(schemaspace)
         resource = url_unescape(resource)
-        schema_manager = SchemaManager()
+
         try:
-            schema = schema_manager.get_schema(namespace, resource)
+            schema_manager = SchemaManager.instance()
+            schema = schema_manager.get_schema(schemaspace, resource)
         except (ValidationError, ValueError, SchemaNotFoundError) as err:
             raise web.HTTPError(404, str(err)) from err
         except Exception as err:
@@ -207,21 +214,47 @@ class SchemaResourceHandler(HttpErrorMixin, APIHandler):
         self.finish(schema)
 
 
-class NamespaceHandler(HttpErrorMixin, APIHandler):
-    """Handler for retrieving namespaces """
+class SchemaspaceHandler(HttpErrorMixin, APIHandler):
+    """Handler for retrieving schemaspace names. """
 
     @web.authenticated
     async def get(self):
-        schema_manager = SchemaManager()
+
         try:
-            namespaces = schema_manager.get_namespaces()
+            schema_manager = SchemaManager.instance()
+            schemaspaces = schema_manager.get_schemaspace_names()
         except (ValidationError, ValueError) as err:
             raise web.HTTPError(404, str(err)) from err
         except Exception as err:
             raise web.HTTPError(500, repr(err)) from err
 
-        namespace_model = dict()
-        namespace_model['namespaces'] = namespaces
+        schemaspace_model = {'schemaspaces': schemaspaces}
 
         self.set_header("Content-Type", 'application/json')
-        self.finish(namespace_model)
+        self.finish(schemaspace_model)
+
+
+class SchemaspaceResourceHandler(HttpErrorMixin, APIHandler):
+    """Handler for retrieving schemaspace JSON info (id, display name and descripton) for a given schemaspace. """
+
+    @web.authenticated
+    async def get(self, schemaspace):
+
+        try:
+            schema_manager = SchemaManager.instance()
+            schemaspace = schema_manager.get_schemaspace(schemaspace)
+
+        except (ValidationError, ValueError) as err:
+            raise web.HTTPError(404, str(err)) from err
+        except Exception as err:
+            raise web.HTTPError(500, repr(err)) from err
+
+        schemaspace_info_model = {
+            'name': schemaspace.name,
+            'id': schemaspace.id,
+            'display_name': schemaspace.display_name,
+            'description': schemaspace.description,
+        }
+
+        self.set_header("Content-Type", 'application/json')
+        self.finish(schemaspace_info_model)

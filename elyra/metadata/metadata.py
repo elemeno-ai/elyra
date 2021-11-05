@@ -15,11 +15,13 @@
 #
 
 import json
+from typing import Any
+from typing import Type
+from typing import TypeVar
 
 from ipython_genutils.importstring import import_item
-from typing import Type, TypeVar, Any
 
-from .schema import SchemaManager
+from elyra.metadata.schema import SchemaManager
 
 # Setup forward reference for type hint on return from class factory method.  See
 # https://stackoverflow.com/questions/39205527/can-you-annotate-return-type-when-value-is-instance-of-cls/39205612#39205612
@@ -58,22 +60,41 @@ class Metadata(object):
         """
         pass
 
-    def pre_delete(self, **kwargs: Any) -> None:
-        """Called by MetadataManager prior to deleting the instance.
+    def post_save(self, **kwargs: Any) -> None:
+        """Called by MetadataManager following the save of the instance.
 
         :param kwargs: additional arguments
+        Keyword Args:
+            for_update (bool): indicates if this save operation if for update (True) or create (False)
+
+        Note: Since exceptions thrown from this method can adversely affect the operation,
+        implementations are advised to trap all exceptions unless the operation's
+        rollback is warranted.
+        """
+        pass
+
+    def pre_delete(self, **kwargs: Any) -> None:
+        """Called by MetadataManager prior to deleting the instance."""
+        pass
+
+    def post_delete(self, **kwargs: Any) -> None:
+        """Called by MetadataManager following the deletion of the instance.
+
+        Note: Since exceptions thrown from this method can adversely affect the operation,
+        implementations are advised to trap all exceptions unless the operation's
+        rollback is warranted.
         """
         pass
 
     @classmethod
-    def from_dict(cls: Type[M], namespace: str, metadata_dict: dict) -> M:
+    def from_dict(cls: Type[M], schemaspace: str, metadata_dict: dict) -> M:
         """Creates an appropriate instance of Metadata from a dictionary instance """
 
         # Get the schema and look for metadata_class entry and use that, else Metadata.
-        metadata_class_name = 'elyra.metadata.Metadata'
+        metadata_class_name = 'elyra.metadata.metadata.Metadata'
         schema_name = metadata_dict.get('schema_name')
         if schema_name:
-            schema = SchemaManager.instance().get_schema(namespace, schema_name)
+            schema = SchemaManager.instance().get_schema(schemaspace, schema_name)
             metadata_class_name = schema.get('metadata_class_name', metadata_class_name)
         metadata_class = import_item(metadata_class_name)
         try:

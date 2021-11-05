@@ -33,19 +33,17 @@ with open(os.path.join(here, 'elyra', '_version.py')) as f:
 npm_packages_path = "./dist/*.tgz"
 auto_jupyter_notebook_extension_path = "./etc/config/jupyter_notebook_config.d/*.json"
 auto_jupyter_server_extension_path = "./etc/config/jupyter_server_config.d/*.json"
+component_registry_path = './etc/config/components/*.json'
+components_kfp_path = './etc/config/components/kfp/*.yaml'
+components_airflow_path = './etc/config/components/airflow/*.py'
+metadata_path_runtime_image = './etc/config/metadata/runtime-images/*.json'
+metadata_path_registries = './etc/config/metadata/component-registries/*.json'
 settings_path = './etc/config/settings/*.json'
-metadata_path = './etc/config/metadata/runtime-images/*.json'
 
-# kfp_packages = [
-#     'kfp-notebook~=0.22.0',
-#     'kfp==1.3.0',
-#     'kfp-tekton==0.6.0',
-#     ]
-#
-# airflow_packages = [
-#     'pygithub',
-#     'black'
-# ]
+runtime_extras = {
+    'kfp-tekton': ['kfp-tekton~=0.8.1',]
+}
+runtime_extras['all'] = list(set(sum(runtime_extras.values(), [])))
 
 setup_args = dict(
     name="elyra",
@@ -57,54 +55,56 @@ setup_args = dict(
     license="Apache License Version 2.0",
     data_files=[('etc/jupyter/jupyter_notebook_config.d', glob(auto_jupyter_notebook_extension_path)),
                 ('etc/jupyter/jupyter_server_config.d', glob(auto_jupyter_server_extension_path)),
-                ('share/jupyter/lab/settings', glob(settings_path)),
-                ('share/jupyter/metadata/runtime-images', glob(metadata_path))],
+                ('share/jupyter/metadata/runtime-images', glob(metadata_path_runtime_image)),
+                ('share/jupyter/metadata/component-registries', glob(metadata_path_registries)),
+                ('share/jupyter/components', glob(component_registry_path)),
+                ('share/jupyter/components/kfp/', glob(components_kfp_path)),
+                ('share/jupyter/components/airflow/', glob(components_airflow_path)),
+                ('share/jupyter/lab/settings', glob(settings_path))],
     packages=find_packages(),
     install_requires=[
         'autopep8>=1.5.0,<1.5.6',
-        'click',
+        'click>=7.1.1,<8', #Required bykfp 1.6.3
         'colorama',
         'entrypoints>=0.3',
-        'jinja2>=2.11,<3.0',
+        'jinja2>=2.11',
         'jsonschema>=3.2.0',
         'jupyter_core>=4.0,<5.0',
         'jupyter_client>=6.1.7',
-        'jupyter_server>=1.2.0',
-        'jupyterlab>=3.0.0',
-        'jupyterlab-git==0.30.0',
-        'jupyterlab-lsp>=3.0.0',
+        'jupyter_server>=1.7.0',
+        'jupyterlab>=3.0.17',
+        'jupyterlab-git~=0.32',
+        'jupyterlab-lsp>=3.8.0',
         'jupyter-resource-usage>=0.5.1',
         'minio>=5.0.7,<7.0.0',
         'nbclient>=0.5.1',
-        'nbconvert>=5.6.1,<6.0',
-        'nbdime>=3.0.0.b1',
+        'nbconvert>=5.6.1',
+        'nbdime~=3.1',
         'nbformat>=5.1.2',
+        'networkx>=2.5.1',
         'papermill>=2.1.3',
-        'python-language-server[all]>=0.36.2',
+        'python-lsp-server[all]>=1.1.0',
         'pyyaml>=5.3.1,<6.0',
-        'requests>=2.9.1,<3.0',
+        'requests>=2.25.1,<3.0',
         'rfc3986-validator>=0.1.1',
         'tornado>=6.1.0',
         'traitlets>=4.3.2',
-        'urllib3>=1.24.2',
+        'urllib3>=1.26.5',
+        'watchdog>=2.1.3',
         'websocket-client',
         'yaspin',
         # KFP runtime dependencies
-        'kfp-notebook~=0.23.0',
-        'kfp==1.3.0',
-        'kfp-tekton==0.6.0',
+        'kfp>=1.6.3<2.0,!=1.7.2',
         # Airflow runtime dependencies
         'pygithub',
-        'black'
+        'black',
     ],
     extras_require={
         'test': ['pytest', 'pytest-tornasync'],
+        **runtime_extras
     },
     include_package_data=True,
     classifiers=(
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
         'Topic :: Scientific/Engineering',
@@ -112,16 +112,35 @@ setup_args = dict(
         'Topic :: Software Development',
         'Topic :: Software Development :: Libraries',
         'Topic :: Software Development :: Libraries :: Python Modules',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
     ),
     entry_points={
         'console_scripts': [
             'elyra-metadata = elyra.metadata.metadata_app:MetadataApp.main',
             'elyra-pipeline = elyra.cli.pipeline_app:pipeline',
+            'jupyter-elyra = elyra.elyra_app:launch_instance'
+        ],
+        'metadata.schemaspaces': [
+            'runtimes = elyra.metadata.schemaspaces:Runtimes',
+            'runtimes-images = elyra.metadata.schemaspaces:RuntimeImages',
+            'code-snippets = elyra.metadata.schemaspaces:CodeSnippets',
+            'component-registries = elyra.metadata.schemaspaces:ComponentRegistries',
+            'metadata-tests = elyra.tests.metadata.test_utils:MetadataTestSchemaspace'
+        ],
+        'metadata.schemas_providers': [
+            'runtimes = elyra.metadata.schemasproviders:RuntimesSchemas',
+            'runtimes-images = elyra.metadata.schemasproviders:RuntimeImagesSchemas',
+            'code-snippets = elyra.metadata.schemasproviders:CodeSnippetsSchemas',
+            'component-registries = elyra.metadata.schemasproviders:ComponentRegistriesSchemas',
+            'metadata-tests = elyra.tests.metadata.test_utils:MetadataTestSchemasProvider'
         ],
         'elyra.pipeline.processors': [
-            'local = elyra.pipeline.processor_local:LocalPipelineProcessor',
-            'airflow = elyra.pipeline.processor_airflow:AirflowPipelineProcessor',
-            'kfp = elyra.pipeline.processor_kfp:KfpPipelineProcessor'
+            'local = elyra.pipeline.local.processor_local:LocalPipelineProcessor',
+            'airflow = elyra.pipeline.airflow.processor_airflow:AirflowPipelineProcessor',
+            'kfp = elyra.pipeline.kfp.processor_kfp:KfpPipelineProcessor'
         ],
         'papermill.engine': [
             'ElyraEngine = elyra.pipeline.elyra_engine:ElyraEngine',
@@ -134,17 +153,6 @@ if "--dev" not in sys.argv:
     setup_args["data_files"].append(('share/jupyter/lab/extensions', glob(npm_packages_path)))
 else:
     sys.argv.remove("--dev")
-
-# TODO: @akchin document this
-# if "--airflow" not in sys.argv:
-#     setup_args["install_requires"].append(kfp_packages)
-#     setup_args["entry_points"]['elyra.pipeline.processors'].append(
-#         'kfp = elyra.pipeline.processor_kfp:KfpPipelineProcessor')
-# else:
-#     setup_args["install_requires"].append(airflow_packages)
-#     setup_args["entry_points"]['elyra.pipeline.processors'].append(
-#         'airflow = elyra.pipeline.processor_airflow:AirflowPipelineProcessor')
-#     sys.argv.remove("--airflow")
 
 if __name__ == '__main__':
     setup(**setup_args)

@@ -22,10 +22,10 @@ import { PathExt } from '@jupyterlab/coreutils';
 
 import * as React from 'react';
 
-import Utils from './utils';
-
 export const KFP_SCHEMA = 'kfp';
-export const RUNTIMES_NAMESPACE = 'runtimes';
+export const RUNTIMES_SCHEMASPACE = 'runtimes';
+export const RUNTIME_IMAGES_SCHEMASPACE = 'runtime-images';
+export const PIPELINE_COMPONENTS_SCHEMASPACE = 'component-registries';
 
 export interface IRuntime {
   name: string;
@@ -38,6 +38,19 @@ export interface ISchema {
   display_name: string;
 }
 
+enum ContentType {
+  notebook = 'execute-notebook-node',
+  python = 'execute-python-node',
+  r = 'execute-r-node',
+  other = 'other'
+}
+
+const CONTENT_TYPE_MAPPER: Map<string, ContentType> = new Map([
+  ['.py', ContentType.python],
+  ['.ipynb', ContentType.notebook],
+  ['.r', ContentType.r]
+]);
+
 export class PipelineService {
   /**
    * Returns a list of external runtime configurations available as
@@ -45,7 +58,7 @@ export class PipelineService {
    * executed on these runtimes.
    */
   static async getRuntimes(showError = true, action?: string): Promise<any> {
-    return MetadataService.getMetadata(RUNTIMES_NAMESPACE).then(runtimes => {
+    return MetadataService.getMetadata(RUNTIMES_SCHEMASPACE).then(runtimes => {
       if (showError && Object.keys(runtimes).length === 0) {
         return RequestErrors.noMetadataError('runtime', action);
       }
@@ -55,10 +68,37 @@ export class PipelineService {
   }
 
   /**
+   * Submit the pipeline to be executed on an external runtime (e.g. Kbeflow Pipelines)
+   *
+   * @param pipeline
+   * @param runtimeName
+   */
+  static async getRuntimeComponents(runtimeName: string): Promise<any> {
+    return RequestHandler.makeGetRequest(
+      `elyra/pipeline/components/${runtimeName}`
+    );
+  }
+
+  /**
+   * Submit the pipeline to be executed on an external runtime (e.g. Kbeflow Pipelines)
+   *
+   * @param pipeline
+   * @param runtimeName
+   */
+  static async getComponentProperties(
+    runtimeName: string,
+    componentId: string
+  ): Promise<any> {
+    return RequestHandler.makeGetRequest(
+      `elyra/pipeline/components/${runtimeName}/${componentId}/properties`
+    );
+  }
+
+  /**
    * Returns a list of runtime schema
    */
   static async getRuntimesSchema(showError = true): Promise<any> {
-    return MetadataService.getSchema(RUNTIMES_NAMESPACE).then(schema => {
+    return MetadataService.getSchema(RUNTIMES_SCHEMASPACE).then(schema => {
       if (showError && Object.keys(schema).length === 0) {
         return RequestErrors.noMetadataError('schema');
       }
@@ -125,7 +165,7 @@ export class PipelineService {
   }
 
   static getDisplayName(name: string, metadataArr: IDictionary<any>[]): string {
-    return metadataArr.find(r => r['name'] === name)['display_name'];
+    return metadataArr.find(r => r['name'] === name)?.['display_name'];
   }
 
   /**
@@ -134,7 +174,7 @@ export class PipelineService {
    * @param metadataArr
    */
   static getRuntimeName(name: string, metadataArr: IDictionary<any>[]): string {
-    return metadataArr.find(r => r['name'] === name)['schema_name'];
+    return metadataArr.find(r => r['name'] === name)?.['schema_name'];
   }
 
   /**
@@ -266,90 +306,24 @@ export class PipelineService {
     });
   }
 
+  static getNodeType(filepath: string): string {
+    const extension: string = PathExt.extname(filepath);
+    const type: string = CONTENT_TYPE_MAPPER.get(extension)!;
+
+    // TODO: throw error when file extension is not supported?
+    return type;
+  }
+
   /**
-   * Verify if the given pipeline is "current" by looking on it's version, and perform
-   * any conversion if needed.
-   *
-   * @param pipelineDefinition
+   * Check if a given file is allowed to be added to the pipeline
+   * @param item
    */
-  static convertPipeline(pipelineDefinition: any, pipelinePath: string): any {
-    let pipelineJSON = JSON.parse(JSON.stringify(pipelineDefinition));
-
-    const currentVersion: number = Utils.getPipelineVersion(pipelineJSON);
-
-    if (currentVersion < 1) {
-      // original pipeline definition without a version
-      console.info('Migrating pipeline to version 1.');
-      pipelineJSON = this.convertPipelineV0toV1(pipelineJSON);
+  static isSupportedNode(file: any): boolean {
+    if (PipelineService.getNodeType(file.path)) {
+      return true;
+    } else {
+      return false;
     }
-    if (currentVersion < 2) {
-      // adding relative path on the pipeline filenames
-      console.info('Migrating pipeline to version 2.');
-      pipelineJSON = this.convertPipelineV1toV2(pipelineJSON, pipelinePath);
-    }
-    if (currentVersion < 3) {
-      // Adding python script support
-      console.info('Migrating pipeline to version 3 (current version).');
-      pipelineJSON = this.convertPipelineV2toV3(pipelineJSON, pipelinePath);
-    }
-    return pipelineJSON;
-  }
-
-  private static convertPipelineV0toV1(pipelineJSON: any): any {
-    Utils.renamePipelineAppdataField(
-      pipelineJSON.pipelines[0],
-      'title',
-      'name'
-    );
-    Utils.deletePipelineAppdataField(pipelineJSON.pipelines[0], 'export');
-    Utils.deletePipelineAppdataField(
-      pipelineJSON.pipelines[0],
-      'export_format'
-    );
-    Utils.deletePipelineAppdataField(pipelineJSON.pipelines[0], 'export_path');
-
-    // look into nodes
-    for (const nodeKey in pipelineJSON.pipelines[0]['nodes']) {
-      const node = pipelineJSON.pipelines[0]['nodes'][nodeKey];
-      Utils.renamePipelineAppdataField(node, 'artifact', 'filename');
-      Utils.renamePipelineAppdataField(node, 'image', 'runtime_image');
-      Utils.renamePipelineAppdataField(node, 'vars', 'env_vars');
-      Utils.renamePipelineAppdataField(
-        node,
-        'file_dependencies',
-        'dependencies'
-      );
-      Utils.renamePipelineAppdataField(
-        node,
-        'recursive_dependencies',
-        'include_subdirectories'
-      );
-    }
-
-    pipelineJSON.pipelines[0]['app_data']['version'] = 1;
-    return pipelineJSON;
-  }
-
-  private static convertPipelineV1toV2(
-    pipelineJSON: any,
-    pipelinePath: string
-  ): any {
-    pipelineJSON.pipelines[0] = this.setNodePathsRelativeToPipeline(
-      pipelineJSON.pipelines[0],
-      pipelinePath
-    );
-    pipelineJSON.pipelines[0]['app_data']['version'] = 2;
-    return pipelineJSON;
-  }
-
-  private static convertPipelineV2toV3(
-    pipelineJSON: any,
-    pipelinePath: string
-  ): any {
-    // No-Op this is to disable old versions of Elyra
-    // to see a pipeline with Python Script nodes
-    pipelineJSON.pipelines[0]['app_data']['version'] = 3;
-    return pipelineJSON;
   }
 
   static getPipelineRelativeNodePath(
@@ -380,10 +354,16 @@ export class PipelineService {
     pipelinePath: string
   ): any {
     for (const node of pipeline.nodes) {
-      node.app_data.filename = this.getPipelineRelativeNodePath(
-        pipelinePath,
-        node.app_data.filename
-      );
+      if (
+        node.op === 'execute-notebook-node' ||
+        node.op === 'execute-python-node' ||
+        node.op === 'execute-r-node'
+      ) {
+        node.app_data.component_parameters.filename = this.getPipelineRelativeNodePath(
+          pipelinePath,
+          node.app_data.component_parameters.filename
+        );
+      }
     }
     return pipeline;
   }
@@ -393,10 +373,16 @@ export class PipelineService {
     pipelinePath: string
   ): any {
     for (const node of pipeline.nodes) {
-      node.app_data.filename = this.getWorkspaceRelativeNodePath(
-        pipelinePath,
-        node.app_data.filename
-      );
+      if (
+        node.op === 'execute-notebook-node' ||
+        node.op === 'execute-python-node' ||
+        node.op === 'execute-r-node'
+      ) {
+        node.app_data.component_parameters.filename = this.getWorkspaceRelativeNodePath(
+          pipelinePath,
+          node.app_data.component_parameters.filename
+        );
+      }
     }
     return pipeline;
   }

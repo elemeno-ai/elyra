@@ -36,15 +36,15 @@ export interface IScriptOutput {
  */
 export class ScriptRunner {
   sessionManager: SessionManager;
-  sessionConnection: Session.ISessionConnection;
+  sessionConnection: Session.ISessionConnection | null;
   kernelSpecManager: KernelSpecManager;
   kernelManager: KernelManager;
-  disableRun: Function;
+  disableRun: (disabled: boolean) => void;
 
   /**
    * Construct a new runner.
    */
-  constructor(disableRun: Function) {
+  constructor(disableRun: (disabled: boolean) => void) {
     this.disableRun = disableRun;
 
     this.kernelSpecManager = new KernelSpecManager();
@@ -68,10 +68,10 @@ export class ScriptRunner {
    * Function: Starts a session with a proper kernel and executes code from file editor.
    */
   runScript = async (
-    kernelName: string,
+    kernelName: string | undefined,
     contextPath: string,
     code: string,
-    handleKernelMsg: Function
+    handleKernelMsg: (msgOutput: any) => void
   ): Promise<any> => {
     if (!kernelName) {
       this.disableRun(true);
@@ -87,7 +87,11 @@ export class ScriptRunner {
         return this.errorDialog(SESSION_ERROR_MSG);
       }
 
-      if (!this.sessionConnection) {
+      // This is a bit weird, seems like typescript doesn't believe that `startSession`
+      // can set `sessionConnection`
+      this.sessionConnection = this
+        .sessionConnection as Session.ISessionConnection | null;
+      if (!this.sessionConnection?.kernel) {
         // session didn't get started
         return this.errorDialog(SESSION_ERROR_MSG);
       }
@@ -160,7 +164,7 @@ export class ScriptRunner {
    */
   shutdownSession = async (): Promise<void> => {
     if (this.sessionConnection) {
-      const name = this.sessionConnection.kernel.name;
+      const name = this.sessionConnection.kernel?.name;
 
       try {
         this.disableRun(false);

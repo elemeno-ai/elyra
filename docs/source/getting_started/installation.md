@@ -35,52 +35,55 @@ The instructions below are installing the latest release.
 
 ### pip
 
+**NOTE:** On November 2020, a new version of PIP (20.3) was released with a new, "2020" resolver. This resolver does not yet work with Elyra and might lead to errors in installation. In order to install Elyra, you need to either downgrade pip to version 20.2.4 `pip install --upgrade pip==20.2.4` or, in case you use pip 20.3 (or later), you need to add option `--use-deprecated legacy-resolver` to your pip install command.
+
 If you use `pip`, install Elyra with:
 
 ```bash
-pip install --upgrade elyra && jupyter lab build
+pip3 install --upgrade elyra[all] && jupyter lab build
 ```
 
-Note: Ubuntu and CentOS users may need to use `pip3 install elyra` 
+**NOTE:**
+The Elyra packaging process was changed in version 3.1.0. The [Kubeflow Pipelines on Tekton](https://github.com/kubeflow/kfp-tekton) dependency [is no longer installed by default](https://github.com/elyra-ai/elyra/pull/2043). To install this dependency, you must specify `elyra[all]` or `elyra[kfp-tekton]`.
 
 If desired, you can install these Elyra extensions independently:
 
 - [Pipeline Editor](https://pypi.org/project/elyra-pipeline-editor-extension/)
 
    ```bash
-   pip install --upgrade elyra-pipeline-editor-extension && jupyter lab build
+   pip3 install --upgrade elyra-pipeline-editor-extension && jupyter lab build
    ```
 
 - [Code Snippets](https://pypi.org/project/elyra-code-snippet-extension/)
 
    ```bash
-   pip install --upgrade elyra-code-snippet-extension && jupyter lab build
+   pip3 install --upgrade elyra-code-snippet-extension && jupyter lab build
    ```
 
 - [Python Editor](https://pypi.org/project/elyra-python-editor-extension/)
 
    ```bash
-   pip install --upgrade elyra-python-editor-extension && jupyter lab build
+   pip3 install --upgrade elyra-python-editor-extension && jupyter lab build
    ```
 
 - [R Editor](https://pypi.org/project/elyra-r-editor-extension/)
 
    ```bash
-   pip install --upgrade elyra-r-editor-extension && jupyter lab build
+   pip3 install --upgrade elyra-r-editor-extension && jupyter lab build
    ```
-
-**NOTE:** On November 2020, a new version of PIP (20.3) was released with a new, "2020" resolver. This resolver does not yet work with Elyra and might lead to errors in installation. In order to install Elyra, you need to either downgrade pip to version 20.2.4 `pip install --upgrade pip==20.2.4` or, in case you use pip 20.3 (or later), you need to add option `--use-deprecated legacy-resolver` to your pip install command.
-
 
 ### conda
 
 If you use `conda`, install Elyra with:
 
 ```bash
-conda install -c conda-forge elyra && jupyter lab build
+conda install -c conda-forge elyra[all] && jupyter lab build
 ```
 
-or install the Pipeline editor, Code Snippet, or Script editor extensions individually:
+**NOTE:**
+The Elyra packaging process was changed in version 3.1.0. The [Kubeflow Pipelines on Tekton](https://github.com/kubeflow/kfp-tekton) dependency [is no longer installed by default](https://github.com/elyra-ai/elyra/pull/2043). To install this dependency, you must specify `elyra[all]` or `elyra[kfp-tekton]`.
+
+You can also install the Pipeline editor, Code Snippet, or Script editor extensions individually:
 
 ```bash
 conda install -c conda-forge elyra-pipeline-editor-extension && jupyter lab build
@@ -223,7 +226,7 @@ docker pull quay.io/elyra/elyra:dev
 Invocation example 1: Run the most recent Elyra development build in a Docker container. All changes are discarded when the Docker container is stopped.
 
 ```
-docker run -it -p 8888:8888 elyra/elyra:2.2.4 jupyter lab --debug
+docker run -it -p 8888:8888 elyra/elyra:3.2.2 jupyter lab --debug
 ```
 
 Invocation example 2: Run the most recent Elyra development build in a Docker container and mount the existing local `$HOME/jupyter-notebooks/` directory as JupyterLab work directory. This enables you to make existing notebooks and other files available in the Docker container. Only files in this working directory are retained when the Docker container is stopped. 
@@ -232,7 +235,7 @@ Invocation example 2: Run the most recent Elyra development build in a Docker co
 docker run -it -p 8888:8888\
  -v ${HOME}/jupyter-notebooks/:/home/jovyan/work\
  -w /home/jovyan/work\
- elyra/elyra:2.2.4 jupyter lab --debug
+ elyra/elyra:3.2.2 jupyter lab --debug
 ```
 
 Invocation example 3: Same as above. In addition a local directory named `${HOME}/jupyter-data-dir` is mounted as the Jupyter data directory in the Docker container, storing all user-defined Elyra metadata artifacts you might create, such as code snippets, runtime configurations, or runtime images.
@@ -244,7 +247,7 @@ docker run -it -p 8888:8888\
  -v ${HOME}/jupyter-notebooks/:/home/jovyan/work\
  -w /home/jovyan/work\
  -v ${HOME}/jupyter-data-dir:/home/jovyan/.local/share/jupyter\
- elyra/elyra:2.2.4 jupyter lab --debug
+ elyra/elyra:3.2.2 jupyter lab --debug
 ```
 
 Open the displayed URL in your browser to start using JupyterLab and Elyra.
@@ -257,6 +260,10 @@ Open the displayed URL in your browser to start using JupyterLab and Elyra.
      or http://127.0.0.1:8888/?token=d690bde267ec75d6f88c64a39825f8b05b919dd084451f82
 ```
 
+### Kubeflow Notebook Server
+
+The instructions in 
+[this topic](/recipes/using-elyra-with-kubeflow-notebook-server.md) outline how to configure a [Kubeflow Notebook Server](https://www.kubeflow.org/docs/components/notebooks) for Elyra.
 
 ### Red Hat OpenShift
 

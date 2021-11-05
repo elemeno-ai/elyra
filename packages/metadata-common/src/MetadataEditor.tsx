@@ -19,7 +19,8 @@ import {
   DropDown,
   ThemeProvider,
   RequestErrors,
-  TextInput
+  TextInput,
+  ArrayInput
 } from '@elyra/ui-components';
 
 import { ILabStatus } from '@jupyterlab/application';
@@ -51,13 +52,13 @@ const DIRTY_CLASS = 'jp-mod-dirty';
 
 interface IMetadataEditorProps {
   schema: string;
-  namespace: string;
+  schemaspace: string;
   name?: string;
   code?: string[];
   onSave: () => void;
   editorServices: IEditorServices | null;
   status: ILabStatus;
-  themeManager: IThemeManager;
+  themeManager?: IThemeManager;
 }
 
 interface ICodeBlockProps {
@@ -82,7 +83,7 @@ const CodeBlock: React.FC<ICodeBlockProps> = ({
   const [error, setError] = React.useState(defaultError);
 
   const codeBlockRef = React.useRef<HTMLDivElement>(null);
-  const editorRef = React.useRef<CodeEditor.IEditor>(null);
+  const editorRef = React.useRef<CodeEditor.IEditor>();
 
   // `editorServices` should never change so make it a ref.
   const servicesRef = React.useRef(editorServices);
@@ -98,19 +99,22 @@ const CodeBlock: React.FC<ICodeBlockProps> = ({
       onChange?.(args.text.split('\n'));
     };
 
-    editorRef.current = servicesRef.current.factoryService.newInlineEditor({
-      host: codeBlockRef.current,
-      model: new CodeEditor.Model({
-        value: defaultValue,
-        mimeType: servicesRef.current.mimeTypeService.getMimeTypeByLanguage({
-          name: language,
-          codemirror_mode: language
+    if (codeBlockRef.current !== null) {
+      editorRef.current = servicesRef.current.factoryService.newInlineEditor({
+        host: codeBlockRef.current,
+        model: new CodeEditor.Model({
+          value: defaultValue,
+          mimeType: servicesRef.current.mimeTypeService.getMimeTypeByLanguage({
+            name: language,
+            codemirror_mode: language
+          })
         })
-      })
-    });
-    editorRef.current.model.value.changed.connect(handleChange);
+      });
+      editorRef.current?.model.value.changed.connect(handleChange);
+    }
+
     return (): void => {
-      editorRef.current.model.value.changed.disconnect(handleChange);
+      editorRef.current?.model.value.changed.disconnect(handleChange);
     };
     // NOTE: The parent component is unstable so props change frequently causing
     // new editors to be created unnecessarily. This effect on mount should only
@@ -120,7 +124,7 @@ const CodeBlock: React.FC<ICodeBlockProps> = ({
   }, []);
 
   React.useEffect(() => {
-    if (editorRef !== null) {
+    if (editorRef.current !== undefined) {
       editorRef.current.model.mimeType = servicesRef.current.mimeTypeService.getMimeTypeByLanguage(
         {
           name: language,
@@ -156,25 +160,26 @@ const SaveButton = styled(Button)({
  */
 export class MetadataEditor extends ReactWidget {
   onSave: () => void;
-  displayName: string;
-  editorServices: IEditorServices;
+  editorServices: IEditorServices | null;
   status: ILabStatus;
-  editor: CodeEditor.IEditor;
   schemaName: string;
-  schemaDisplayName: string;
-  namespace: string;
-  name: string;
-  code: string[];
-  dirty: boolean;
+  schemaspace: string;
+  name?: string;
+  code?: string[];
   allTags: string[];
-  clearDirty: IDisposable;
-  requiredFields: string[];
+  clearDirty: IDisposable | null;
   invalidForm: boolean;
   showSecure: IDictionary<boolean>;
   widgetClass: string;
-  themeManager: IThemeManager;
-  referenceURL: string;
-  language: string;
+  themeManager?: IThemeManager;
+
+  displayName?: string;
+  editor?: CodeEditor.IEditor;
+  schemaDisplayName?: string;
+  dirty?: boolean;
+  requiredFields?: string[];
+  referenceURL?: string;
+  language?: string;
 
   schema: IDictionary<any> = {};
   schemaPropertiesByCategory: IDictionary<string[]> = {};
@@ -186,7 +191,7 @@ export class MetadataEditor extends ReactWidget {
     this.editorServices = props.editorServices;
     this.status = props.status;
     this.clearDirty = null;
-    this.namespace = props.namespace;
+    this.schemaspace = props.schemaspace;
     this.schemaName = props.schema;
     this.allTags = [];
     this.onSave = props.onSave;
@@ -198,6 +203,7 @@ export class MetadataEditor extends ReactWidget {
     this.addClass(this.widgetClass);
 
     this.handleTextInputChange = this.handleTextInputChange.bind(this);
+    this.handleArrayInputChange = this.handleArrayInputChange.bind(this);
     this.handleChangeOnTag = this.handleChangeOnTag.bind(this);
     this.handleDropdownChange = this.handleDropdownChange.bind(this);
     this.renderField = this.renderField.bind(this);
@@ -211,7 +217,7 @@ export class MetadataEditor extends ReactWidget {
 
   async initializeMetadata(): Promise<void> {
     try {
-      const schemas = await MetadataService.getSchema(this.namespace);
+      const schemas = await MetadataService.getSchema(this.schemaspace);
       for (const schema of schemas) {
         if (this.schemaName === schema.name) {
           this.schema = schema.properties.metadata.properties;
@@ -245,7 +251,7 @@ export class MetadataEditor extends ReactWidget {
     }
 
     try {
-      this.allMetadata = await MetadataService.getMetadata(this.namespace);
+      this.allMetadata = await MetadataService.getMetadata(this.schemaspace);
     } catch (error) {
       RequestErrors.serverError(error);
     }
@@ -263,7 +269,7 @@ export class MetadataEditor extends ReactWidget {
         if (this.name === metadata.name) {
           this.metadata = metadata['metadata'];
           this.displayName = metadata['display_name'];
-          this.title.label = this.displayName;
+          this.title.label = this.displayName ?? '';
         }
       }
     } else {
@@ -300,7 +306,7 @@ export class MetadataEditor extends ReactWidget {
       const value =
         this.metadata[schemaField] || this.schema[schemaField].default;
       if (
-        this.requiredFields.includes(schemaField) &&
+        this.requiredFields?.includes(schemaField) &&
         this.isValueEmpty(value)
       ) {
         this.invalidForm = true;
@@ -348,7 +354,10 @@ export class MetadataEditor extends ReactWidget {
     }
 
     if (!this.name) {
-      MetadataService.postMetadata(this.namespace, JSON.stringify(newMetadata))
+      MetadataService.postMetadata(
+        this.schemaspace,
+        JSON.stringify(newMetadata)
+      )
         .then((response: any): void => {
           this.handleDirtyState(false);
           this.onSave();
@@ -357,7 +366,7 @@ export class MetadataEditor extends ReactWidget {
         .catch(error => RequestErrors.serverError(error));
     } else {
       MetadataService.putMetadata(
-        this.namespace,
+        this.schemaspace,
         this.name,
         JSON.stringify(newMetadata)
       )
@@ -375,11 +384,16 @@ export class MetadataEditor extends ReactWidget {
     // Special case because all metadata has a display name
     if (schemaField === 'display_name') {
       this.displayName = value;
-    } else if (!value && !this.requiredFields.includes(schemaField)) {
+    } else if (!value && !this.requiredFields?.includes(schemaField)) {
       delete this.metadata[schemaField];
     } else {
       this.metadata[schemaField] = value;
     }
+  }
+
+  handleArrayInputChange(schemaField: string, values: string[]): void {
+    this.handleDirtyState(true);
+    this.metadata[schemaField] = values;
   }
 
   handleDropdownChange = (schemaField: string, value: string): void => {
@@ -434,7 +448,7 @@ export class MetadataEditor extends ReactWidget {
   setFormFocus(): void {
     const isFocused = document
       .querySelector(`.${this.widgetClass}`)
-      .contains(document.activeElement);
+      ?.contains(document.activeElement);
 
     if (!isFocused) {
       const input = document.querySelector(
@@ -456,7 +470,7 @@ export class MetadataEditor extends ReactWidget {
     this.setFormFocus();
   }
 
-  renderField(fieldName: string): React.ReactElement {
+  renderField(fieldName: string): React.ReactNode {
     let uihints = this.schema[fieldName].uihints;
     const required =
       this.requiredFields && this.requiredFields.includes(fieldName);
@@ -517,19 +531,21 @@ export class MetadataEditor extends ReactWidget {
           className={'elyra-metadataEditor-formInput elyra-metadataEditor-code'}
           key={`${fieldName}CodeEditor`}
         >
-          <CodeBlock
-            editorServices={this.editorServices}
-            language={this.language ?? this.metadata.language}
-            defaultValue={initialCodeValue}
-            onChange={(value): void => {
-              this.metadata.code = value;
-              this.handleDirtyState(true);
-              return;
-            }}
-            defaultError={uihints.error}
-            required={required}
-            label={this.schema[fieldName].title}
-          />
+          {this.editorServices !== null && (
+            <CodeBlock
+              editorServices={this.editorServices}
+              language={this.language ?? this.metadata.language}
+              defaultValue={initialCodeValue}
+              onChange={(value): void => {
+                this.metadata.code = value;
+                this.handleDirtyState(true);
+                return;
+              }}
+              defaultError={uihints.error}
+              required={required ?? false}
+              label={this.schema[fieldName].title}
+            />
+          )}
         </div>
       );
     } else if (uihints.field_type === 'tags') {
@@ -546,8 +562,26 @@ export class MetadataEditor extends ReactWidget {
           />
         </div>
       );
+    } else if (uihints.field_type === 'array') {
+      return (
+        <ArrayInput
+          label={this.schema[fieldName].title}
+          description={this.schema[fieldName].description}
+          key={`${fieldName}TextInput`}
+          fieldName={fieldName}
+          defaultValues={
+            this.metadata[fieldName] ?? this.schema[fieldName].default ?? []
+          }
+          required={required}
+          defaultError={uihints.error}
+          placeholder={uihints.placeholder}
+          onChange={(values: string[]): void => {
+            this.handleArrayInputChange(fieldName, values);
+          }}
+        />
+      );
     } else {
-      return;
+      return null;
     }
   }
 
@@ -579,9 +613,17 @@ export class MetadataEditor extends ReactWidget {
       headerText = `Add new ${this.schemaDisplayName}`;
     }
     const error = this.displayName === '' && this.invalidForm;
+    const onKeyPress: React.KeyboardEventHandler = (
+      event: React.KeyboardEvent
+    ) => {
+      const targetElement = event.nativeEvent.target as HTMLElement;
+      if (event.key === 'Enter' && targetElement?.tagName !== 'TEXTAREA') {
+        this.saveMetadata();
+      }
+    };
     return (
       <ThemeProvider themeManager={this.themeManager}>
-        <div className={ELYRA_METADATA_EDITOR_CLASS}>
+        <div onKeyPress={onKeyPress} className={ELYRA_METADATA_EDITOR_CLASS}>
           <h3> {headerText} </h3>
           <p style={{ width: '100%', marginBottom: '10px' }}>
             All fields marked with an asterisk are required.&nbsp;

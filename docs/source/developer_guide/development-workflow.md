@@ -48,11 +48,11 @@ Download and install a [Python 3 version of Miniconda](https://docs.conda.io/en/
     ```
     python --version
     which python # Displays current python path
-    pip --version
-    which pip
+    pip3 --version
+    which pip3
     ```
     Python path must be under miniconda envs folder.
-    Confirm pip location matches where miniconda is installed.
+    Confirm pip3 location matches where miniconda is installed.
 
 * Install NodeJS
 
@@ -85,19 +85,15 @@ Issuing a `make` command with no task specified will provide a list of the curre
 ```bash
 $ make
 
-build-server                   Build backend
-build-ui                       Build packages
 clean                          Make a clean source tree and uninstall extensions
-docker-image                   Build docker image
+container-images               Build all container images
 docs                           Build docs
-install-server                 Install backend
+install-server                 Build and install backend only
 install                        Build and install
 lint                           Run linters
+publish-container-images       Publish all container images
 release                        Build wheel file for release
-test-server                    Run unit tests
-test-ui                        Run frontend tests
-test                           Run all tests
-validate-runtime-images        Validates delivered runtime-images meet minimum criteria
+test                           Run all tests (backend, frontend and cypress integration tests)
 watch                          Watch packages. For use alongside jupyter lab --watch
 ```
 
@@ -107,12 +103,12 @@ You can build and install all Elyra packages with:
 make clean install
 ```
 
-You can check that the notebook server extension was successful installed with:
+You can check that the notebook server extension was successfully installed with:
 ```bash
 jupyter serverextension list
 ```
 
-You can check that the JupyterLab extension was successful installed with:
+You can check that the JupyterLab extension was successfully installed with:
 ```bash
 jupyter labextension list
 ```
@@ -126,7 +122,25 @@ To clean your environment and install the latest JupyterLab:
 To specify a JupyterLab version to be installed:
 `etc/scripts/clean-jupyterlab.sh --version 2.2.9`
 
-### Incremental Development
+#### Parallel Development with @elyra/pipeline-editor
+
+You can install Elyra using a local build of @elyra/pipeline-editor with:
+```bash
+make clean dev-link install
+```
+
+### Back-end Development
+After making code changes to the back-end, you can re-build Elyra's Python package with:
+
+```bash
+make install-server
+```
+
+This command builds and installs the updated  Python package independently, skipping any UI component build.
+
+Restart JupyterLab to pick up the new code changes.
+
+### Front-end Incremental Development
 
 Elyra supports incremental development using `--watch`. This allows you to make code changes to
 front-end packages and see them without running `make install` again.
@@ -153,7 +167,16 @@ not just refresh your browser.
 Elyra's container image can be built using:
 
 ```bash
-make container-image
+make elyra-image
 ```
 
-Official container images are published on [Docker Hub](https://hub.docker.com/r/elyra/elyra/tags) and [quay.io](https://quay.io/repository/elyra/elyra?tab=tags).
+By default, the command above will build a container image from the tip of the repository master branch.
+
+In order to build from a particular release, you can pass a `TAG` parameter to the make command as below:
+
+```bash
+make elyra-image TAG=2.2.1
+```
+
+Official container images are published on [Docker Hub](https://hub.docker.com/r/elyra/elyra/tags)
+and [quay.io](https://quay.io/repository/elyra/elyra?tab=tags).

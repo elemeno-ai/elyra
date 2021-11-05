@@ -53,7 +53,7 @@ import React from 'react';
 
 import {
   CodeSnippetService,
-  CODE_SNIPPET_NAMESPACE,
+  CODE_SNIPPET_SCHEMASPACE,
   CODE_SNIPPET_SCHEMA
 } from './CodeSnippetService';
 
@@ -78,11 +78,11 @@ interface ICodeSnippetDisplayProps extends IMetadataDisplayProps {
   metadata: IMetadata[];
   openMetadataEditor: (args: any) => void;
   updateMetadata: () => void;
-  namespace: string;
+  schemaspace: string;
   schema: string;
   sortMetadata: boolean;
   className: string;
-  getCurrentWidget: () => Widget;
+  getCurrentWidget: () => Widget | null;
   editorServices: IEditorServices;
   shell: JupyterFrontEnd.IShell;
 }
@@ -104,36 +104,42 @@ class CodeSnippetDisplay extends MetadataDisplay<
     this._evtMouseUp = this._evtMouseUp.bind(this);
   }
 
-  // Handle code snippet insert into an editor
+  // Handle code snippet insertion into an editor
   private insertCodeSnippet = async (snippet: IMetadata): Promise<void> => {
-    const widget: Widget = this.props.getCurrentWidget();
-    const snippetStr: string = snippet.metadata.code.join('\n');
+    const widget = this.props.getCurrentWidget();
+    const snippetStr = snippet.metadata.code.join('\n');
 
-    if (
-      widget instanceof DocumentWidget &&
-      (widget as DocumentWidget).content instanceof FileEditor
-    ) {
-      const documentWidget = widget as DocumentWidget;
-      const fileEditor = (documentWidget.content as FileEditor).editor;
+    if (widget === null) {
+      return;
+    }
+
+    if (this.isFileEditor(widget)) {
+      const fileEditor = widget.content.editor;
       const markdownRegex = /^\.(md|mkdn?|mdown|markdown)$/;
       if (
         PathExt.extname(widget.context.path).match(markdownRegex) !== null &&
         snippet.metadata.language.toLowerCase() !== 'markdown'
       ) {
-        // Wrap snippet into a code block when inserting it into a markdown file
-        fileEditor.replaceSelection(
-          '```' + snippet.metadata.language + '\n' + snippetStr + '\n```'
+        fileEditor.replaceSelection?.(
+          this.addMarkdownCodeBlock(snippet.metadata.language, snippetStr)
         );
-      } else if (widget.constructor.name == 'PythonFileEditor') {
-        this.verifyLanguageAndInsert(snippet, 'python', fileEditor);
+      } else if (widget.constructor.name === 'ScriptEditor') {
+        const editorLanguage =
+          widget.context.sessionContext.kernelPreference.language;
+        this.verifyLanguageAndInsert(snippet, editorLanguage ?? '', fileEditor);
       } else {
-        fileEditor.replaceSelection(snippetStr);
+        fileEditor.replaceSelection?.(snippetStr);
       }
     } else if (widget instanceof NotebookPanel) {
       const notebookWidget = widget as NotebookPanel;
       const notebookCell = (notebookWidget.content as Notebook).activeCell;
       const notebookCellIndex = (notebookWidget.content as Notebook)
         .activeCellIndex;
+
+      if (notebookCell === null) {
+        return;
+      }
+
       const notebookCellEditor = notebookCell.editor;
 
       if (notebookCell instanceof CodeCell) {
@@ -149,18 +155,32 @@ class CodeSnippetDisplay extends MetadataDisplay<
         notebookCell instanceof MarkdownCell &&
         snippet.metadata.language.toLowerCase() !== 'markdown'
       ) {
-        // Wrap snippet into a code block when inserting it into a markdown cell
-        notebookCellEditor.replaceSelection(
-          '```' + snippet.metadata.language + '\n' + snippetStr + '\n```'
+        notebookCellEditor.replaceSelection?.(
+          this.addMarkdownCodeBlock(snippet.metadata.language, snippetStr)
         );
       } else {
-        notebookCellEditor.replaceSelection(snippetStr);
+        notebookCellEditor.replaceSelection?.(snippetStr);
       }
-      const cell = notebookWidget.model.contentFactory.createCodeCell({});
-      notebookWidget.model.cells.insert(notebookCellIndex + 1, cell);
+      const cell = notebookWidget.model?.contentFactory.createCodeCell({});
+      if (cell === undefined) {
+        return;
+      }
+      notebookWidget.model?.cells.insert(notebookCellIndex + 1, cell);
     } else {
       this.showErrDialog('Code snippet insert failed: Unsupported widget');
     }
+  };
+
+  // Verify if a given widget is a FileEditor
+  private isFileEditor = (
+    widget: Widget
+  ): widget is DocumentWidget<FileEditor> => {
+    return (widget as DocumentWidget).content instanceof FileEditor;
+  };
+
+  // Return the given code wrapped in a markdown code block
+  private addMarkdownCodeBlock = (language: string, code: string): string => {
+    return '```' + language + '\n' + code + '\n```';
   };
 
   // Handle language compatibility between code snippet and editor
@@ -179,11 +199,11 @@ class CodeSnippetDisplay extends MetadataDisplay<
         snippet.display_name
       );
       if (result.button.accept) {
-        editor.replaceSelection(snippetStr);
+        editor.replaceSelection?.(snippetStr);
       }
     } else {
       // Language match or editorLanguage is unavailable
-      editor.replaceSelection(snippetStr);
+      editor.replaceSelection?.(snippetStr);
     }
   };
 
@@ -372,7 +392,7 @@ class CodeSnippetDisplay extends MetadataDisplay<
         onClick: (): void => {
           this.props.openMetadataEditor({
             onSave: this.props.updateMetadata,
-            namespace: CODE_SNIPPET_NAMESPACE,
+            schemaspace: CODE_SNIPPET_SCHEMASPACE,
             schema: CODE_SNIPPET_SCHEMA,
             name: metadata.name
           });
@@ -392,7 +412,7 @@ class CodeSnippetDisplay extends MetadataDisplay<
                   (value: Widget, index: number) => {
                     return (
                       value.id ==
-                      `${METADATA_EDITOR_ID}:${CODE_SNIPPET_NAMESPACE}:${CODE_SNIPPET_SCHEMA}:${metadata.name}`
+                      `${METADATA_EDITOR_ID}:${CODE_SNIPPET_SCHEMASPACE}:${CODE_SNIPPET_SCHEMA}:${metadata.name}`
                     );
                   }
                 );
@@ -469,9 +489,13 @@ class CodeSnippetDisplay extends MetadataDisplay<
         ].model.value.text = codeSnippet.metadata.code.join('\n');
       } else {
         // Add new snippets
+        const snippetElement = document.getElementById(codeSnippet.name);
+        if (snippetElement === null) {
+          return;
+        }
         this.editors[codeSnippet.name] = editorFactory({
           config: { readOnly: true },
-          host: document.getElementById(codeSnippet.name),
+          host: snippetElement,
           model: new CodeEditor.Model({
             value: codeSnippet.metadata.code.join('\n'),
             mimeType: getMimeTypeByLanguage({
@@ -492,8 +516,12 @@ class CodeSnippetDisplay extends MetadataDisplay<
     this.createPreviewEditors();
   }
 
-  private _drag: Drag;
-  private _dragData: { pressX: number; pressY: number; dragImage: HTMLElement };
+  private _drag: Drag | null;
+  private _dragData: {
+    pressX: number;
+    pressY: number;
+    dragImage: HTMLElement | null;
+  } | null;
 }
 
 /**
@@ -502,10 +530,10 @@ class CodeSnippetDisplay extends MetadataDisplay<
 export interface ICodeSnippetWidgetProps extends IMetadataWidgetProps {
   app: JupyterFrontEnd;
   display_name: string;
-  namespace: string;
+  schemaspace: string;
   schema: string;
   icon: LabIcon;
-  getCurrentWidget: () => Widget;
+  getCurrentWidget: () => Widget | null;
   editorServices: IEditorServices;
 }
 
@@ -513,9 +541,7 @@ export interface ICodeSnippetWidgetProps extends IMetadataWidgetProps {
  * A widget for Code Snippets.
  */
 export class CodeSnippetWidget extends MetadataWidget {
-  props: ICodeSnippetWidgetProps;
-
-  constructor(props: ICodeSnippetWidgetProps) {
+  constructor(public props: ICodeSnippetWidgetProps) {
     super(props);
   }
 
@@ -544,7 +570,7 @@ export class CodeSnippetWidget extends MetadataWidget {
         metadata={metadata}
         openMetadataEditor={this.openMetadataEditor}
         updateMetadata={this.updateMetadata}
-        namespace={CODE_SNIPPET_NAMESPACE}
+        schemaspace={CODE_SNIPPET_SCHEMASPACE}
         schema={CODE_SNIPPET_SCHEMA}
         getCurrentWidget={this.props.getCurrentWidget}
         className={CODE_SNIPPETS_METADATA_CLASS}

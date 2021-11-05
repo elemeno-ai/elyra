@@ -1,6 +1,6 @@
 {
   "name": "@elyra/metadata-extension",
-  "version": "2.2.4",
+  "version": "3.2.2",
   "description": "JupyterLab extension - View and edit metadata",
   "keywords": [
     "jupyter",
@@ -29,11 +29,13 @@
     "clean": "rimraf lib",
     "dist": "npm pack .",
     "prepare": "npm run build",
-    "watch": "tsc -w"
+    "watch": "tsc -w",
+    "lab:install": "jupyter labextension install --no-build",
+    "lab:uninstall": "jupyter labextension uninstall --no-build"
   },
   "dependencies": {
-    "@elyra/metadata-common": "^2.2.4",
-    "@elyra/services": "^2.2.4",
+    "@elyra/metadata-common": "3.2.1",
+    "@elyra/services": "3.2.1",
     "@jupyterlab/application": "^3.0.0",
     "@jupyterlab/apputils": "^3.0.0",
     "@jupyterlab/codeeditor": "^3.0.0",

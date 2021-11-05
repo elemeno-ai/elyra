@@ -13,27 +13,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+from abc import ABC
+from abc import abstractmethod
+from collections import OrderedDict
+import copy
 import io
 import json
-import jupyter_core.paths
 import os
 import time
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
-from abc import ABC, abstractmethod
-from traitlets import log
-from typing import Optional, List
+import jupyter_core.paths
+from traitlets import log  # noqa H306
+from traitlets.config import LoggingConfigurable  # noqa H306
+from traitlets.config import SingletonConfigurable
+from traitlets.traitlets import Bool
+from traitlets.traitlets import Integer
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
-from .error import MetadataNotFoundError, MetadataExistsError
+from elyra.metadata.error import MetadataExistsError
+from elyra.metadata.error import MetadataNotFoundError
 
 
 class MetadataStore(ABC):
-    def __init__(self, namespace, **kwargs):
-        self.namespace = namespace
-        self.log = log.get_logger()
+    def __init__(self, schemaspace, parent: Optional[LoggingConfigurable] = None, **kwargs):
+        self.schemaspace = schemaspace
+        self.log = parent.log if parent else log.get_logger()
 
     @abstractmethod
-    def namespace_exists(self) -> bool:
-        """Returns True if the namespace for this instance exists"""
+    def schemaspace_exists(self) -> bool:
+        """Returns True if the schemaspace for this instance exists"""
         pass
 
     @abstractmethod
@@ -52,30 +65,137 @@ class MetadataStore(ABC):
         pass
 
 
+def caching_enabled(func):
+    """Checks if file store cache is enabled.  If not, just return, else perform function."""
+    def wrapped(self, *args, **kwargs):
+        if not self.enabled:
+            return
+        return func(self, *args, **kwargs)
+    return wrapped
+
+
+class FileMetadataCache(SingletonConfigurable):
+    """FileMetadataCache is used exclusively by FileMetadataStore to cache file-based metadata instances.
+
+    FileMetadataCache utilizes a watchdog handler to monitor directories corresponding to
+    any files it contains.  The handler is primarily used to determine which cached entries
+    to remove (on delete operations).
+
+    The cache is implemented as a simple LRU cache using an OrderedDict.
+    """
+
+    max_size = Integer(min=1, max=1024, default_value=128, config=True,
+                       help="The maximum number of entries allowed in the cache.")
+
+    enabled = Bool(default_value=True, config=True,
+                   help="Caching is enabled (True) or disabled (False).")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.hits: int = 0
+        self.misses: int = 0
+        self.trims: int = 0
+        self._entries: OrderedDict = OrderedDict()
+        if self.enabled:  # Only create and start an observer when enabled
+            self.observed_dirs = set()  # Tracks which directories are being watched
+            self.observer = Observer()
+            self.observer.start()
+
+    def __len__(self) -> int:
+        """Return the number of running kernels."""
+        return len(self._entries)
+
+    def __contains__(self, path: str) -> bool:
+        return path in self._entries
+
+    @caching_enabled
+    def add_item(self, path: str, entry: Dict[str, Any]) -> None:
+        """Adds the named entry and its entry to the cache.
+
+        If this causes the cache to grow beyond its max size, the least recently
+        used entry is removed.
+        """
+        md_dir: str = os.path.dirname(path)
+        if md_dir not in self.observed_dirs and os.path.isdir(md_dir):
+            self.observer.schedule(FileChangeHandler(self), md_dir, recursive=True)
+            self.observed_dirs.add(md_dir)
+        self._entries[path] = copy.deepcopy(entry)
+        self._entries.move_to_end(path)
+        if len(self._entries) > self.max_size:
+            self.trims += 1
+            self._entries.popitem(last=False)  # pop LRU entry
+
+    @caching_enabled
+    def get_item(self, path: str) -> Optional[Dict[str, Any]]:
+        """Gets the named entry and returns its value or None if not present."""
+        if path in self._entries:
+            self.hits += 1
+            self._entries.move_to_end(path)
+            return copy.deepcopy(self._entries[path])
+
+        self.misses += 1
+        return None
+
+    @caching_enabled
+    def remove_item(self, path: str) -> Optional[Dict[str, Any]]:
+        """Removes the named entry and returns its value or None if not present."""
+        if path in self._entries:
+            return self._entries.pop(path)
+
+        return None
+
+
+class FileChangeHandler(FileSystemEventHandler):
+    """Watchdog handler that filters on .json files within specific metadata directories."""
+
+    def __init__(self, file_metadata_cache: FileMetadataCache, **kwargs):
+        super(FileChangeHandler, self).__init__(**kwargs)
+        self.file_metadata_cache = file_metadata_cache
+        self.log = file_metadata_cache.log
+
+    def dispatch(self, event):
+        """Dispatches delete and modification events pertaining to watched metadata instances. """
+        if event.src_path.endswith(".json"):
+            super(FileChangeHandler, self).dispatch(event)
+
+    def on_deleted(self, event):
+        """Fires when a watched file is deleted, triggering a removal of the corresponding item from the cache."""
+        self.file_metadata_cache.remove_item(event.src_path)
+
+    def on_modified(self, event):
+        """Fires when a watched file is modified.
+
+        On updates, go ahead and remove the item from the cache.  It will be reloaded on next fetch.
+        """
+        self.file_metadata_cache.remove_item(event.src_path)
+
+
 class FileMetadataStore(MetadataStore):
 
-    def __init__(self, namespace: str, **kwargs):
-        super(FileMetadataStore, self).__init__(namespace, **kwargs)
-        self.metadata_paths = FileMetadataStore.metadata_path(self.namespace)
+    def __init__(self, schemaspace: str, **kwargs):
+        super().__init__(schemaspace, **kwargs)
+        self.cache = FileMetadataCache.instance()
+        self.metadata_paths = FileMetadataStore.metadata_path(self.schemaspace.lower())
         self.preferred_metadata_dir = self.metadata_paths[0]
-        self.log.debug("Namespace '{}' is using metadata directory: {} from list: {}".
-                       format(self.namespace, self.preferred_metadata_dir, self.metadata_paths))
+        self.log.debug(f"Schemaspace '{self.schemaspace}' is using metadata directory: "
+                       f"{self.preferred_metadata_dir} from list: {self.metadata_paths}")
 
-    def namespace_exists(self) -> bool:
-        """Does the namespace exist in any of the dir paths?"""
-        namespace_dir_exists = False
+    def schemaspace_exists(self) -> bool:
+        """Does the schemaspace exist in any of the dir paths?"""
+        schemaspace_dir_exists = False
         for d in self.metadata_paths:
             if os.path.isdir(d):
-                namespace_dir_exists = True
+                schemaspace_dir_exists = True
                 break
-        return namespace_dir_exists
+        return schemaspace_dir_exists
 
     def fetch_instances(self, name: Optional[str] = None, include_invalid: bool = False) -> List[dict]:
         """Returns a list of metadata instances.
 
         If name is provided, the single instance will be returned in a list of one item.
         """
-        if not self.namespace_exists():  # namespace doesn't exist - return empty list
+        if not self.schemaspace_exists():  # schemaspace doesn't exist - return empty list
             return []
 
         resources = {}
@@ -114,7 +234,7 @@ class FileMetadataStore(MetadataStore):
                 return [resources[name]]
 
             # If we're looking for a single metadata and we're here, then its not found
-            raise MetadataNotFoundError(self.namespace, name)
+            raise MetadataNotFoundError(self.schemaspace, name)
 
         # We're here only if loading all resources, so only return list of values.
         return list(resources.values())
@@ -163,27 +283,28 @@ class FileMetadataStore(MetadataStore):
             # Since multiple folders are in play, we only allow removal if the resource is in
             # the first directory in the list (i.e., most "near" the user)
             if not self._remove_allowed(metadata):
-                self.log.error("Removal of instance '{}' from the {} namespace is not permitted!  "
-                               "Resource conflict at '{}' ".format(name, self.namespace, resource))
-                raise PermissionError("Removal of instance '{}' from the {} namespace is not permitted!".
-                                      format(name, self.namespace))
+                self.log.error("Removal of instance '{}' from the {} schemaspace is not permitted!  "
+                               "Resource conflict at '{}' ".format(name, self.schemaspace, resource))
+                raise PermissionError("Removal of instance '{}' from the {} schemaspace is not permitted!".
+                                      format(name, self.schemaspace))
             os.remove(resource)
+            self.cache.remove_item(resource)
 
     def _prepare_create(self, name: str, resource: str) -> None:
         """Prepare to create resource, ensure it doesn't exist in the hierarchy."""
         if os.path.exists(resource):
-            self.log.error("An instance named '{}' already exists in the {} namespace at {}.".
-                           format(name, self.namespace, resource))
-            raise MetadataExistsError(self.namespace, name)
+            self.log.error("An instance named '{}' already exists in the {} schemaspace at {}.".
+                           format(name, self.schemaspace, resource))
+            raise MetadataExistsError(self.schemaspace, name)
 
         # Although the resource doesn't exist in the preferred dir, it may exist at other levels.
         # If creating, then existence at other levels should also prevent the operation.
         try:
             resources = self.fetch_instances(name)
             # Instance exists at other (protected) level and this is a create - throw exception
-            self.log.error("An instance named '{}' already exists in the {} namespace at {}.".
-                           format(name, self.namespace, resources[0].get('resource')))
-            raise MetadataExistsError(self.namespace, name)
+            self.log.error("An instance named '{}' already exists in the {} schemaspace at {}.".
+                           format(name, self.schemaspace, resources[0].get('resource')))
+            raise MetadataExistsError(self.schemaspace, name)
         except MetadataNotFoundError:  # doesn't exist elsewhere, so we're good.
             pass
 
@@ -197,9 +318,9 @@ class FileMetadataStore(MetadataStore):
             self.log.debug("Renamed resource for instance '{}' to: '{}'".format(name, renamed_resource))
         return renamed_resource
 
-    @staticmethod
-    def _rollback(resource: str, renamed_resource: str) -> None:
+    def _rollback(self, resource: str, renamed_resource: str) -> None:
         """Rollback changes made during persistence (typically updates) and exceptions are encountered """
+        self.cache.remove_item(resource)  # Clear the item from the cache, let it be re-added naturally
         if os.path.exists(resource):
             os.remove(resource)
         if renamed_resource:  # Restore the renamed file
@@ -207,6 +328,10 @@ class FileMetadataStore(MetadataStore):
 
     def _confirm_persistence(self, resource: str, renamed_resource: str) -> dict:
         """Confirms persistence by loading the instance and cleans up renamed instance, if applicable."""
+
+        # Prior to loading from the filesystem, REMOVE any associated cache entry (likely on updates)
+        # so that _load_resource() hits the filesystem - then adds the item to the cache.
+        self.cache.remove_item(resource)
         try:
             metadata = self._load_resource(resource)
         except Exception as ex:
@@ -224,13 +349,18 @@ class FileMetadataStore(MetadataStore):
         current_resource = os.path.splitext(metadata.get('resource'))[0]
         return allowed_resource == current_resource
 
-    def _load_resource(self, resource: str) -> dict:
+    def _load_resource(self, resource: str) -> Dict[str, Any]:
         # This is always called with an existing resource (path) so no need to check existence.
+
+        metadata_json: Dict[str, Any] = self.cache.get_item(resource)
+        if metadata_json is not None:
+            self.log.debug(f"Loading metadata instance from cache: '{metadata_json['name']}'")
+            return metadata_json
 
         # Always take name from resource so resources can be copied w/o having to change content
         name = os.path.splitext(os.path.basename(resource))[0]
 
-        self.log.debug("Loading metadata instance from: '{}'".format(resource))
+        self.log.debug(f"Loading metadata instance from: '{resource}'")
         with io.open(resource, 'r', encoding='utf-8') as f:
             try:
                 metadata_json = json.load(f)
@@ -239,13 +369,14 @@ class FileMetadataStore(MetadataStore):
                 # we aren't able to even instantiate an instance of Metadata.  Because errors are ignored
                 # when getting multiple items, it's okay to raise.  The singleton searches (by handlers)
                 # already catch ValueError and map to 400, so we're good there as well.
-                self.log.error("JSON failed to load for resource '{}' in the {} namespace with error: {}.".
-                               format(resource, self.namespace, jde))
-                raise ValueError("JSON failed to load for instance '{}' in the {} namespace with error: {}.".
-                                 format(name, self.namespace, jde)) from jde
+                self.log.error(f"JSON failed to load for resource '{resource}' in the "
+                               f"{self.schemaspace} schemaspace with error: {jde}.")
+                raise ValueError(f"JSON failed to load for instance '{name}' in the "
+                                 f"{self.schemaspace} schemaspace with error: {jde}.") from jde
 
             metadata_json['name'] = name
             metadata_json['resource'] = resource
+            self.cache.add_item(resource, metadata_json)
 
         return metadata_json
 

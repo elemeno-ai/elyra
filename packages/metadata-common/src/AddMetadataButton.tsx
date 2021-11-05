@@ -33,8 +33,10 @@ export const METADATA_HEADER_BUTTON_CLASS = 'elyra-metadataHeader-button';
 export const METADATA_HEADER_POPPER_CLASS = 'elyra-metadataHeader-popper';
 
 export interface IAddMetadataButtonProps {
-  schemas: IDictionary<any>[];
+  schemas?: IDictionary<any>[];
   addMetadata: (schema: string) => void;
+  // Optional string to append to the schema display name
+  schemaType?: string;
 }
 
 const StyledButton = styled(Button)({
@@ -48,7 +50,7 @@ export const AddMetadataButton = (
   const anchorRef = React.useRef<HTMLDivElement>(null);
   let singleSchema = false;
 
-  if (props.schemas && props.schemas.length === 1) {
+  if (props.schemas?.length === 1) {
     singleSchema = true;
   }
 
@@ -75,13 +77,13 @@ export const AddMetadataButton = (
           className={METADATA_HEADER_BUTTON_CLASS}
           onClick={
             singleSchema
-              ? (): void => props.addMetadata(props.schemas[0].name)
+              ? (): void => props.addMetadata(props.schemas?.[0].name)
               : handleToggle
           }
           title={`Create new ${
             singleSchema
-              ? props.schemas[0].display_name
-              : props.schemas[0].namespace
+              ? props.schemas?.[0].display_name
+              : props.schemas?.[0].schemaspace
           }`}
         >
           <addIcon.react tag="span" elementPosition="center" width="16px" />
@@ -96,16 +98,16 @@ export const AddMetadataButton = (
         <Paper>
           <ClickAwayListener onClickAway={handleClose}>
             <MenuList id="split-button-menu">
-              {props.schemas.map((schema: IDictionary<any>) => (
+              {props.schemas?.map((schema: IDictionary<any>) => (
                 <MenuItem
                   key={schema.display_name}
-                  title={`New ${schema.display_name}`}
+                  title={`New ${schema.display_name} ${props.schemaType ?? ''}`}
                   onClick={(event: any): void => {
                     props.addMetadata(schema.name);
                     handleClose(event);
                   }}
                 >
-                  {`New ${schema.display_name}`}
+                  {`New ${schema.display_name} ${props.schemaType ?? ''}`}
                 </MenuItem>
               ))}
             </MenuList>

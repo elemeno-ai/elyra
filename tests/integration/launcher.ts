@@ -16,7 +16,7 @@
 
 describe('Elyra launcher is in use', () => {
   beforeEach(() => {
-    cy.openJupyterLab();
+    cy.resetJupyterLab();
   });
 
   it('should have Elyra extensions', () => {
@@ -25,11 +25,18 @@ describe('Elyra launcher is in use', () => {
     // });
     // Jupyter notebook default kernel is available
     cy.get(
-      '.jp-LauncherCard[data-category="Notebook"][title="Python 3"]:visible'
+      '.jp-LauncherCard[data-category="Notebook"][title*="Python 3"]:visible'
     );
-    // Pipeline editor extension is available
+    // Generic Pipeline editor extension is available
     cy.get(
-      '.jp-LauncherCard[data-category="Elyra"][title="Pipeline Editor"]:visible'
+      '.jp-LauncherCard[data-category="Elyra"][title="Generic Pipeline Editor"]:visible'
+    );
+    // Two specific runtime pipeline editor extension is available
+    cy.get(
+      '.jp-LauncherCard[data-category="Elyra"][title="Apache Airflow Pipeline Editor"]:visible'
+    );
+    cy.get(
+      '.jp-LauncherCard[data-category="Elyra"][title="Kubeflow Pipelines Pipeline Editor"]:visible'
     );
     // Script editor extension is available
     cy.get(
