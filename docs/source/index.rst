@@ -1,5 +1,5 @@
 ..
-.. Copyright 2018-2021 Elyra Authors
+.. Copyright 2018-2022 Elyra Authors
 ..
 .. Licensed under the Apache License, Version 2.0 (the "License");
 .. you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ Elyra is a set of AI-centric extensions to JupyterLab Notebooks.
    getting_started/overview.md
    getting_started/installation.md
    getting_started/starting.md
+   getting_started/published-resources.md
    getting_started/tutorials.md
    getting_started/getting-help.md
    getting_started/changelog.md
@@ -72,6 +73,7 @@ Elyra is a set of AI-centric extensions to JupyterLab Notebooks.
    developer_guide/logging.md
    developer_guide/metadata.md
    developer_guide/pipelines.md
+   developer_guide/pipeline-component-connectors.md
    developer_guide/trackers.md
    developer_guide/troubleshooting.md
    developer_guide/release.md

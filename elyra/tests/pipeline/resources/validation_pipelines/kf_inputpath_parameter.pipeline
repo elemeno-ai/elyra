@@ -11,11 +11,17 @@
         {
           "id": "5a244bf5-bc26-48a3-8680-b9c08a6746a0",
           "type": "execution_node",
-          "op": "component_Downloaddata",
+          "op": "elyra-kfp-examples-catalog:a08014f9252f",
           "app_data": {
             "component_parameters": {
-              "url": "https://raw.githubusercontent.com/kubeflow/pipelines/93fc34474bf989998cf19445149aca2847eee763/components/notebooks/samples/test_notebook.ipynb",
-              "curl_options": "--location",
+              "url": {
+                "activeControl": "StringControl",
+                "StringControl": "https://raw.githubusercontent.com/kubeflow/pipelines/93fc34474bf989998cf19445149aca2847eee763/components/notebooks/samples/test_notebook.ipynb"
+              },
+              "curl_options": {
+                "activeControl": "StringControl",
+                "StringControl": "--location"
+              },
               "output_data": ""
             },
             "label": "",
@@ -59,16 +65,25 @@
         {
           "id": "089a12df-fe2f-4fcb-ae37-a1f8a6259ca1",
           "type": "execution_node",
-          "op": "run_notebook_using_papermill_Runnotebookusingpapermill",
+          "op": "elyra-kfp-examples-catalog:61e6f4141f65",
           "app_data": {
             "component_parameters": {
               "notebook": {
                 "value": "5a244bf5-bc26-48a3-8680-b9c08a6746a0",
                 "option": "elyra_output_data"
               },
-              "parameters": "{}",
-              "packages_to_install": "[]",
-              "input_data": "",
+              "parameters": {
+                "activeControl": "StringControl",
+                "StringControl": "{}"
+              },
+              "packages_to_install": {
+                "activeControl": "StringControl",
+                "StringControl": "[]"
+              },
+              "input_data": {
+                "activeControl": "StringControl",
+                "StringControl": ""
+              },
               "output_notebook": "",
               "output_output_data": ""
             },
@@ -121,14 +136,17 @@
         {
           "id": "e8820c55-dc79-46d1-b32e-924fa5d70d2a",
           "type": "execution_node",
-          "op": "component_Calculatedatahash",
+          "op": "elyra-kfp-examples-catalog:d68ec7fcdf46",
           "app_data": {
             "component_parameters": {
               "data": {
                 "value": "089a12df-fe2f-4fcb-ae37-a1f8a6259ca1",
                 "option": "elyra_output_notebook"
               },
-              "hash_algorithm": "SHA512",
+              "hash_algorithm": {
+                "activeControl": "StringControl",
+                "StringControl": "SHA512"
+              },
               "output_hash": ""
             },
             "label": "",
@@ -181,11 +199,10 @@
         "ui_data": {
           "comments": []
         },
-        "version": 5,
-        "runtime": "kfp",
+        "version": 7,
+        "runtime_type": "KUBEFLOW_PIPELINES",
         "properties": {
-          "name": "kf_inputpath_parameter",
-          "runtime": "Kubeflow Pipelines"
+          "name": "kf_inputpath_parameter"
         }
       },
       "runtime_ref": ""

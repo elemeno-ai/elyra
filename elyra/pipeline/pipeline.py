@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ from typing import Optional
 
 # TODO: Make pipeline version available more widely
 # as today is only available on the pipeline editor
-PIPELINE_CURRENT_VERSION = 5
+PIPELINE_CURRENT_VERSION = 7
 PIPELINE_CURRENT_SCHEMA = 3.0
 
 
@@ -76,6 +76,7 @@ class Operation(object):
         self._name = name
         self._parent_operation_ids = parent_operation_ids or []
         self._component_params = component_params
+        self._doc = None
 
         # Scrub the inputs and outputs lists
         self._component_params["inputs"] = Operation._scrub_list(component_params.get('inputs', []))
@@ -96,6 +97,18 @@ class Operation(object):
     @property
     def name(self) -> str:
         return self._name
+
+    @name.setter
+    def name(self, value: str):
+        self._name = value
+
+    @property
+    def doc(self) -> str:
+        return self._doc
+
+    @doc.setter
+    def doc(self, value: str):
+        self._doc = value
 
     @property
     def parent_operation_ids(self) -> List[str]:
@@ -243,6 +256,10 @@ class GenericOperation(Operation):
             self._name = os.path.basename(self._name).split(".")[0]
         return self._name
 
+    @name.setter
+    def name(self, value):
+        self._name = value
+
     @property
     def filename(self) -> str:
         return self._component_params.get('filename')
@@ -361,14 +378,14 @@ class Pipeline(object):
     @property
     def runtime(self) -> str:
         """
-        Describe the runtime type where the pipeline will be executed
+        The runtime processor name that will execute the pipeline
         """
         return self._runtime
 
     @property
     def runtime_config(self) -> str:
         """
-        Describe the runtime configuration that should be used to submit the pipeline to execution
+        The runtime configuration that should be used to submit the pipeline for execution
         """
         return self._runtime_config
 

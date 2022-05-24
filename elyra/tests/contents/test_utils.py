@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,14 +26,15 @@ def create_dir(location, dir_name):
             raise
 
 
-def create_file(location, file_name, content):
+def create_file(location, file_name, content, subdir=''):
+    directory = os.path.join(location, subdir)
     try:
-        os.makedirs(location)
+        os.makedirs(directory)
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise
 
-    resource = os.path.join(location, file_name)
+    resource = os.path.join(directory, file_name)
     with open(resource, 'w', encoding='utf-8') as f:
         f.write(content)
 

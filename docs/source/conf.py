@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,17 +26,13 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
-# import sys
-# sys.path.insert(0, os.path.abspath('.'))
-import sphinx_rtd_theme
-from recommonmark.transform import AutoStructify
 
 master_doc = 'index'
 
 # -- Project information -----------------------------------------------------
 
 project = 'Elyra'
-copyright = '2021, Elyra Team'
+copyright = '2022, Elyra Team'
 author = 'Elyra Team'
 
 _version_py = os.path.join('..', '..', 'elyra', '_version.py')

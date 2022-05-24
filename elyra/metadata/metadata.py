@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,8 +44,8 @@ class Metadata(object):
         self.resource = kwargs.get('resource')
         self.reason = kwargs.get('reason')
 
-    def post_load(self, **kwargs: Any) -> None:
-        """Called by MetadataManager after fetching the instance.
+    def on_load(self, **kwargs: Any) -> None:
+        """Called by MetadataManager after fetching the instance and prior to validation.
 
         :param kwargs: additional arguments
         """

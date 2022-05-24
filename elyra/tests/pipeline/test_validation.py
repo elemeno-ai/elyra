@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 import os
 
+from conftest import AIRFLOW_COMPONENT_CACHE_INSTANCE
+from conftest import KFP_COMPONENT_CACHE_INSTANCE
 import pytest
 
 from elyra.pipeline.pipeline import PIPELINE_CURRENT_VERSION
@@ -45,7 +47,8 @@ def validation_manager(setup_factory_data):
 
 async def test_invalid_lower_pipeline_version(validation_manager, load_pipeline):
     pipeline, response = load_pipeline('generic_basic_pipeline_only_notebook.pipeline')
-    pipeline['pipelines'][0]['app_data']['version'] = -1
+    pipeline_version = PIPELINE_CURRENT_VERSION - 1
+    pipeline['pipelines'][0]['app_data']['version'] = pipeline_version
 
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     validation_manager._validate_pipeline_structure(pipeline_definition=pipeline_definition, response=response)
@@ -53,12 +56,14 @@ async def test_invalid_lower_pipeline_version(validation_manager, load_pipeline)
     assert len(issues) == 1
     assert issues[0]['severity'] == 1
     assert issues[0]['type'] == 'invalidPipeline'
-    assert issues[0]['message'] == 'Primary pipeline version field has an invalid value.'
+    assert issues[0]['message'] == f'Pipeline version {pipeline_version} is out of date '\
+                                   'and needs to be migrated using the Elyra pipeline editor.'
 
 
 def test_invalid_upper_pipeline_version(validation_manager, load_pipeline):
     pipeline, response = load_pipeline('generic_basic_pipeline_only_notebook.pipeline')
-    pipeline['pipelines'][0]['app_data']['version'] = PIPELINE_CURRENT_VERSION + 1
+    pipeline_version = PIPELINE_CURRENT_VERSION + 1
+    pipeline['pipelines'][0]['app_data']['version'] = pipeline_version
 
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     validation_manager._validate_pipeline_structure(pipeline_definition=pipeline_definition, response=response)
@@ -66,7 +71,8 @@ def test_invalid_upper_pipeline_version(validation_manager, load_pipeline):
     assert len(issues) == 1
     assert issues[0]['severity'] == 1
     assert issues[0]['type'] == 'invalidPipeline'
-    assert issues[0]['message'] == 'Primary pipeline version field has an invalid value.'
+    assert issues[0]['message'] == 'Pipeline was last edited in a newer version of Elyra. '\
+                                   'Update Elyra to use this pipeline.'
 
 
 def test_invalid_pipeline_version_that_needs_migration(validation_manager, load_pipeline):
@@ -100,24 +106,31 @@ def test_basic_pipeline_structure_with_scripts(validation_manager, load_pipeline
     assert not response.to_json().get('issues')
 
 
-async def test_invalid_runtime_node_kubeflow(validation_manager, load_pipeline):
+@pytest.mark.parametrize('catalog_instance', [KFP_COMPONENT_CACHE_INSTANCE], indirect=True)
+async def test_invalid_runtime_node_kubeflow(validation_manager,
+                                             load_pipeline,
+                                             catalog_instance):
     pipeline, response = load_pipeline('kf_invalid_node_op.pipeline')
     node_id = "eace43f8-c4b1-4a25-b331-d57d4fc29426"
 
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     await validation_manager._validate_compatibility(pipeline_definition=pipeline_definition,
                                                      response=response,
-                                                     pipeline_type='kfp',
+                                                     pipeline_type='KUBEFLOW_PIPELINES',
                                                      pipeline_runtime='kfp')
 
     issues = response.to_json().get('issues')
+    print(issues)
     assert len(issues) == 1
     assert issues[0]['severity'] == 1
     assert issues[0]['type'] == 'invalidNodeType'
     assert issues[0]['data']['nodeID'] == node_id
 
 
-async def test_invalid_runtime_node_kubeflow_with_supernode(validation_manager, load_pipeline):
+@pytest.mark.parametrize('catalog_instance', [KFP_COMPONENT_CACHE_INSTANCE], indirect=True)
+async def test_invalid_runtime_node_kubeflow_with_supernode(validation_manager,
+                                                            load_pipeline,
+                                                            catalog_instance):
     pipeline, response = load_pipeline('kf_invalid_node_op_with_supernode.pipeline')
     node_id = "98aa7270-639b-42a4-9a07-b31cd0fa3205"
     pipeline_id = "00304a2b-dec4-4a73-ab4a-6830f97d7855"
@@ -125,9 +138,10 @@ async def test_invalid_runtime_node_kubeflow_with_supernode(validation_manager, 
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     await validation_manager._validate_compatibility(pipeline_definition=pipeline_definition,
                                                      response=response,
-                                                     pipeline_type='kfp',
+                                                     pipeline_type='KUBEFLOW_PIPELINES',
                                                      pipeline_runtime='kfp')
     issues = response.to_json().get('issues')
+    print(issues)
     assert len(issues) == 1
     assert issues[0]['severity'] == 1
     assert issues[0]['type'] == 'invalidNodeType'
@@ -141,7 +155,7 @@ async def test_invalid_pipeline_runtime_with_kubeflow_execution(validation_manag
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     await validation_manager._validate_compatibility(pipeline_definition=pipeline_definition,
                                                      response=response,
-                                                     pipeline_type='airflow',
+                                                     pipeline_type='APACHE_AIRFLOW',
                                                      pipeline_runtime='kfp')
     issues = response.to_json().get('issues')
     assert len(issues) == 1
@@ -155,13 +169,13 @@ async def test_invalid_pipeline_runtime_with_local_execution(validation_manager,
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     await validation_manager._validate_compatibility(pipeline_definition=pipeline_definition,
                                                      response=response,
-                                                     pipeline_type='airflow',
+                                                     pipeline_type='APACHE_AIRFLOW',
                                                      pipeline_runtime='local')
     issues = response.to_json().get('issues')
     assert len(issues) == 1
     assert issues[0]['severity'] == 1
     assert issues[0]['type'] == 'invalidRuntime'
-    assert issues[0]['data']['pipelineType'] == 'airflow'
+    assert issues[0]['data']['pipelineType'] == 'APACHE_AIRFLOW'
 
 
 async def test_invalid_node_op_with_airflow(validation_manager, load_pipeline):
@@ -171,7 +185,7 @@ async def test_invalid_node_op_with_airflow(validation_manager, load_pipeline):
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     await validation_manager._validate_compatibility(pipeline_definition=pipeline_definition,
                                                      response=response,
-                                                     pipeline_type='airflow',
+                                                     pipeline_type='APACHE_AIRFLOW',
                                                      pipeline_runtime='airflow')
     issues = response.to_json().get('issues')
     assert len(issues) == 1
@@ -180,11 +194,11 @@ async def test_invalid_node_op_with_airflow(validation_manager, load_pipeline):
     assert issues[0]['data']['nodeID'] == node_id
 
 
-async def test_invalid_node_property_structure(monkeypatch, load_pipeline):
+async def test_invalid_node_property_structure(validation_manager, monkeypatch, load_pipeline):
     pipeline, response = load_pipeline('generic_invalid_node_property_structure.pipeline')
     node_id = '88ab83dc-d5f0-443a-8837-788ed16851b7'
     node_property = 'runtime_image'
-    pvm = PipelineValidationManager.instance()
+    pvm = validation_manager
 
     monkeypatch.setattr(pvm, "_validate_filepath", lambda node_id, node_label,
                         property_name, filename, response: True)
@@ -195,7 +209,7 @@ async def test_invalid_node_property_structure(monkeypatch, load_pipeline):
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     await pvm._validate_node_properties(pipeline_definition=pipeline_definition,
                                         response=response,
-                                        pipeline_type='generic',
+                                        pipeline_type='GENERIC',
                                         pipeline_runtime='kfp')
 
     issues = response.to_json().get('issues')
@@ -206,18 +220,22 @@ async def test_invalid_node_property_structure(monkeypatch, load_pipeline):
     assert issues[0]['data']['nodeID'] == node_id
 
 
-async def test_missing_node_property_for_kubeflow_pipeline(monkeypatch, load_pipeline):
+@pytest.mark.parametrize('catalog_instance', [KFP_COMPONENT_CACHE_INSTANCE], indirect=True)
+async def test_missing_node_property_for_kubeflow_pipeline(validation_manager,
+                                                           monkeypatch,
+                                                           load_pipeline,
+                                                           catalog_instance):
     pipeline, response = load_pipeline('kf_invalid_node_property_in_component.pipeline')
     node_id = 'fe08b42d-bd8c-4e97-8010-0503a3185427'
     node_property = "notebook"
-    pvm = PipelineValidationManager.instance()
+    pvm = validation_manager
 
     monkeypatch.setattr(pvm, "_validate_filepath", lambda node_id, file_dir, property_name, filename, response: True)
 
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     await pvm._validate_node_properties(pipeline_definition=pipeline_definition,
                                         response=response,
-                                        pipeline_type='kfp',
+                                        pipeline_type='KUBEFLOW_PIPELINES',
                                         pipeline_runtime='kfp')
 
     issues = response.to_json().get('issues')
@@ -332,7 +350,7 @@ async def test_valid_node_property_pipeline_filepath(monkeypatch, validation_man
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     await validation_manager._validate_node_properties(pipeline_definition=pipeline_definition,
                                                        response=response,
-                                                       pipeline_type='generic',
+                                                       pipeline_type='GENERIC',
                                                        pipeline_runtime='kfp')
 
     assert not response.has_fatal
@@ -512,26 +530,34 @@ def test_pipeline_invalid_single_cycle_kfp_with_supernode(validation_manager, lo
     assert issues[0]['type'] == 'circularReference'
 
 
-async def test_pipeline_kfp_inputpath_parameter(validation_manager, load_pipeline):
+@pytest.mark.parametrize('catalog_instance', [KFP_COMPONENT_CACHE_INSTANCE], indirect=True)
+async def test_pipeline_kfp_inputpath_parameter(validation_manager,
+                                                load_pipeline,
+                                                catalog_instance,
+                                                component_cache):
     pipeline, response = load_pipeline('kf_inputpath_parameter.pipeline')
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     await validation_manager._validate_node_properties(pipeline_definition=pipeline_definition,
                                                        response=response,
-                                                       pipeline_type='kfp',
+                                                       pipeline_type='KUBEFLOW_PIPELINES',
                                                        pipeline_runtime='kfp')
 
     issues = response.to_json().get('issues')
     assert len(issues) == 0
 
 
-async def test_pipeline_invalid_kfp_inputpath_parameter(validation_manager, load_pipeline):
+@pytest.mark.parametrize('catalog_instance', [KFP_COMPONENT_CACHE_INSTANCE], indirect=True)
+async def test_pipeline_invalid_kfp_inputpath_parameter(validation_manager,
+                                                        load_pipeline,
+                                                        catalog_instance,
+                                                        component_cache):
     invalid_key_node_id = "089a12df-fe2f-4fcb-ae37-a1f8a6259ca1"
     missing_param_node_id = "e8820c55-dc79-46d1-b32e-924fa5d70d2a"
     pipeline, response = load_pipeline('kf_invalid_inputpath_parameter.pipeline')
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     await validation_manager._validate_node_properties(pipeline_definition=pipeline_definition,
                                                        response=response,
-                                                       pipeline_type='kfp',
+                                                       pipeline_type='KUBEFLOW_PIPELINES',
                                                        pipeline_runtime='kfp')
 
     issues = response.to_json().get('issues')
@@ -545,13 +571,17 @@ async def test_pipeline_invalid_kfp_inputpath_parameter(validation_manager, load
     assert issues[1]['data']['nodeID'] == missing_param_node_id
 
 
-async def test_pipeline_invalid_kfp_inputpath_missing_connection(validation_manager, load_pipeline):
+@pytest.mark.parametrize('catalog_instance', [KFP_COMPONENT_CACHE_INSTANCE], indirect=True)
+async def test_pipeline_invalid_kfp_inputpath_missing_connection(validation_manager,
+                                                                 load_pipeline,
+                                                                 catalog_instance,
+                                                                 component_cache):
     invalid_node_id = "5b78ea0a-e5fc-4022-94d4-7b9dc170d794"
     pipeline, response = load_pipeline('kf_invalid_inputpath_missing_connection.pipeline')
     pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
     await validation_manager._validate_node_properties(pipeline_definition=pipeline_definition,
                                                        response=response,
-                                                       pipeline_type='kfp',
+                                                       pipeline_type='KUBEFLOW_PIPELINES',
                                                        pipeline_runtime='kfp')
 
     issues = response.to_json().get('issues')
@@ -560,3 +590,28 @@ async def test_pipeline_invalid_kfp_inputpath_missing_connection(validation_mana
     assert issues[0]['severity'] == 1
     assert issues[0]['type'] == 'invalidNodeProperty'
     assert issues[0]['data']['nodeID'] == invalid_node_id
+
+
+@pytest.mark.parametrize('catalog_instance', [AIRFLOW_COMPONENT_CACHE_INSTANCE], indirect=True)
+async def test_pipeline_aa_parent_node_missing_xcom_push(validation_manager,
+                                                         load_pipeline,
+                                                         catalog_instance,
+                                                         component_cache):
+
+    invalid_node_id = 'b863d458-21b5-4a46-8420-5a814b7bd525'
+    invalid_operator = 'BashOperator'
+
+    pipeline, response = load_pipeline('aa_parent_node_missing_xcom.pipeline')
+    pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
+    await validation_manager._validate_node_properties(pipeline_definition=pipeline_definition,
+                                                       response=response,
+                                                       pipeline_type='APACHE_AIRFLOW',
+                                                       pipeline_runtime='airflow')
+
+    issues = response.to_json().get('issues')
+    assert len(issues) == 1
+    assert response.has_fatal
+    assert issues[0]['severity'] == 1
+    assert issues[0]['type'] == 'invalidNodeProperty'
+    assert issues[0]['data']['nodeID'] == invalid_node_id
+    assert issues[0]['data']['parentNodeID'] == invalid_operator

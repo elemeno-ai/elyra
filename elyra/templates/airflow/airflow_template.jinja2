@@ -14,7 +14,9 @@ dag = DAG(
     default_args=args,
     schedule_interval='@once',
     start_date=days_ago(1),
-    description='{{ pipeline_description }}',
+    description="""
+{{ pipeline_description|replace("\"\"\"", "\\\"\\\"\\\"") }}
+    """,
     is_paused_upon_creation={{ is_paused_upon_creation }},
 )
 
@@ -35,16 +37,14 @@ env_var_secret_key = Secret(deploy_type='env',
 {% for key, operation in operations_list.items() %}
 
 {% if not operation.is_generic_operator %}
-{% if operation.is_contrib_operator %}
-from airflow.contrib.operators.{{operation.module_name}} import {{ operation.class_name }}
-{% else %}
-from airflow.operators.{{operation.module_name}} import {{ operation.class_name }}
-{% endif %}
+{% for import_statement in operation.imports %}
+{{import_statement}}
+{% endfor %}
 {% else %}
 from airflow.contrib.operators.kubernetes_pod_operator import KubernetesPodOperator
 {% endif %}
 
-# Operator source: {{ operation.operator_source }}{% if not operation.is_generic_operator %}
+{% if operation.operator_source %}# Operator source: {{ operation.operator_source }}{% endif %}{% if not operation.is_generic_operator %}
 op_{{ operation.id|regex_replace }} = {{ operation.class_name }}(
                                                            task_id='{{ operation.notebook|regex_replace }}',
         {% for param, value in operation.component_params.items() %}
@@ -70,7 +70,7 @@ op_{{ operation.id|regex_replace }} = KubernetesPodOperator(name='{{ operation.n
                                                                        'request_memory': '{{ operation.mem_request }}',
             {% endif %}
             {% if operation.gpu_limit %}
-                                                                       'limit_gpu': '{{ operation.cpu_request }}',
+                                                                       'limit_gpu': '{{ operation.gpu_limit }}',
             {% endif %}
         },
 
@@ -84,6 +84,12 @@ op_{{ operation.id|regex_replace }} = KubernetesPodOperator(name='{{ operation.n
                                                           dag=dag)
     {% if operation.image_pull_policy %}
         op_{{ operation.id|regex_replace }}.image_pull_policy = '{{ operation.image_pull_policy }}'
+    {% endif %}
+
+    {% if operation.doc %}
+        op_{{ operation.id|regex_replace }}.doc = """
+        {{ operation.doc|replace("\"\"\"", "\\\"\\\"\\\"") }}
+    """
     {% endif %}
 
     {% if operation.parent_operation_ids %}

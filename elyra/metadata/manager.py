@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,9 @@
 import os
 import re
 from typing import Any
+from typing import Dict
 from typing import List
+from typing import Union
 
 from jsonschema import draft7_format_checker
 from jsonschema import validate
@@ -58,7 +60,7 @@ class MetadataManager(LoggingConfigurable):
         """Returns True if the schemaspace for this instance exists"""
         return self.metadata_store.schemaspace_exists()
 
-    def get_all(self, include_invalid: bool = False) -> List[Metadata]:
+    def get_all(self, include_invalid: bool = False, of_schema: str = None) -> List[Metadata]:
         """Returns all metadata instances in summary form (name, display_name, location)"""
 
         instances = []
@@ -67,7 +69,9 @@ class MetadataManager(LoggingConfigurable):
             # validate the instance prior to return, include invalid instances as appropriate
             try:
                 metadata = Metadata.from_dict(self.schemaspace, metadata_dict)
-                metadata.post_load()  # Allow class instances to handle loads
+                if of_schema and metadata.schema_name != of_schema:  # If provided, filter on of_schema
+                    continue
+                metadata.on_load()  # Allow class instances to handle loads
                 # if we're including invalid and there was an issue on retrieval, add it to the list
                 if include_invalid and metadata.reason:
                     # If no schema-name is present, set to '{unknown}' since we can't make that determination.
@@ -80,9 +84,12 @@ class MetadataManager(LoggingConfigurable):
                 # Since we may not have a metadata instance due to a failure during `from_dict()`,
                 # instantiate a bad instance directly to use in the message and invalid result.
                 invalid_instance = Metadata(**metadata_dict)
-                self.log.debug("Fetch of instance '{}' of schemaspace '{}' encountered an exception: {}".
-                               format(invalid_instance.name, self.schemaspace, ex))
-                if include_invalid:
+                self.log.warning(f"Fetch of instance '{invalid_instance.name}' "
+                                 f"of schemaspace '{self.schemaspace}' "
+                                 f"encountered an exception: {ex}")
+                if include_invalid and (not of_schema or invalid_instance.schema_name == of_schema):
+                    # Export invalid instances if requested and if a schema was not specified
+                    # or the specified schema matches the instance's schema.
                     invalid_instance.reason = ex.__class__.__name__
                     instances.append(invalid_instance)
         return instances
@@ -95,11 +102,11 @@ class MetadataManager(LoggingConfigurable):
         metadata_dict = instance_list[0]
         metadata = Metadata.from_dict(self.schemaspace, metadata_dict)
 
+        # Allow class instances to alter instance
+        metadata.on_load()
+
         # Validate the instance on load
         self.validate(name, metadata)
-
-        # Allow class instances to alter instance
-        metadata.post_load()
 
         return metadata
 
@@ -107,9 +114,9 @@ class MetadataManager(LoggingConfigurable):
         """Creates the given metadata, returning the created instance"""
         return self._save(name, metadata)
 
-    def update(self, name: str, metadata: Metadata) -> Metadata:
+    def update(self, name: str, metadata: Metadata, for_migration: bool = False) -> Metadata:
         """Updates the given metadata, returning the updated instance"""
-        return self._save(name, metadata, for_update=True)
+        return self._save(name, metadata, for_update=True, for_migration=for_migration)
 
     def remove(self, name: str) -> None:
         """Removes the metadata instance corresponding to the given name"""
@@ -154,7 +161,7 @@ class MetadataManager(LoggingConfigurable):
             raise ValidationError(msg) from ve
 
     @staticmethod
-    def _get_normalized_name(name: str) -> str:
+    def get_normalized_name(name: str) -> str:
         # lowercase and replaces spaces with underscore
         name = re.sub('\\s+', '_', name.lower())
         # remove all invalid characters
@@ -181,7 +188,7 @@ class MetadataManager(LoggingConfigurable):
 
         return schema_json
 
-    def _save(self, name: str, metadata: Metadata, for_update: bool = False) -> Metadata:
+    def _save(self, name: str, metadata: Metadata, for_update: bool = False, for_migration: bool = False) -> Metadata:
         if not metadata:
             raise ValueError("An instance of class 'Metadata' was not provided.")
 
@@ -190,7 +197,7 @@ class MetadataManager(LoggingConfigurable):
 
         if not name and not for_update:  # name is derived from display_name only on creates
             if metadata.display_name:
-                name = self._get_normalized_name(metadata.display_name)
+                name = MetadataManager.get_normalized_name(metadata.display_name)
                 metadata.name = name
 
         if not name:  # At this point, name must be set
@@ -203,7 +210,11 @@ class MetadataManager(LoggingConfigurable):
 
         orig_value = None
         if for_update:
-            orig_value = self.get(name)
+            if for_migration:  # Avoid triggering a on_load() call since migrations will likely stem from there
+                instance_list = self.metadata_store.fetch_instances(name=name)
+                orig_value = instance_list[0]
+            else:
+                orig_value = self.get(name)
 
         # Allow class instances to handle pre-save tasks
         metadata.pre_save(for_update=for_update)
@@ -228,9 +239,9 @@ class MetadataManager(LoggingConfigurable):
                 self._rollback(name, Metadata.from_dict(self.schemaspace, metadata_dict), "create", ex)
             raise ex
 
-        return metadata_post_op
+        return self.get(name)  # Retrieve updated/new instance so load hook can be called
 
-    def _rollback(self, name: str, orig_value: Metadata, operation: str, exception: Exception):
+    def _rollback(self, name: str, orig_value: Union[Metadata, Dict], operation: str, exception: Exception):
         """Rolls back the original value depending on the operation.
 
         For rolled back creation attempts, we must remove the created instance.  For rolled back
@@ -239,10 +250,16 @@ class MetadataManager(LoggingConfigurable):
         """
         self.log.debug(f"Rolling back metadata operation '{operation}' for instance '{name}' due to: {exception}")
         if operation == "create":  # remove the instance, orig_value is the newly-created instance.
-            self.metadata_store.delete_instance(orig_value.to_dict())
+            if isinstance(orig_value, Metadata):
+                orig_value = orig_value.to_dict()
+            self.metadata_store.delete_instance(orig_value)
         elif operation == "update":  # restore original as an update
+            if isinstance(orig_value, dict):
+                orig_value = Metadata.from_dict(self.schemaspace, orig_value)
             self.metadata_store.store_instance(name, orig_value.prepare_write(), for_update=True)
         elif operation == "delete":  # restore original as a create
+            if isinstance(orig_value, dict):
+                orig_value = Metadata.from_dict(self.schemaspace, orig_value)
             self.metadata_store.store_instance(name, orig_value.prepare_write(), for_update=False)
         self.log.warning(f"Rolled back metadata operation '{operation}' for instance '{name}' due to "
                          f"failure in post-processing method: {exception}")
@@ -250,25 +267,41 @@ class MetadataManager(LoggingConfigurable):
     def _apply_defaults(self, metadata: Metadata) -> None:
         """If a given property has a default value defined, and that property is not currently represented,
 
-        assign it the default value.
+        assign it the default value.  We will also treat constants similarly.
+
+        For schema-level properties (i.e., not application-level), we will check if such a property
+        has a corresponding attribute and, if so, set the property to that value.
+        Note: we only consider constants updates for schema-level properties
         """
 
-        # Get the schema and build a dict consisting of properties and their default values (for those
-        # properties that have defaults).  Then walk the metadata instance looking for missing properties
-        # and assign the corresponding default value.  Note that we do not consider existing properties with
+        # Get the schema and build a dict consisting of properties and their default/const values (for those
+        # properties that have defaults/consts defined).  Then walk the metadata instance looking for missing
+        # properties and assign the corresponding value.  Note that we do not consider existing properties with
         # values of None for default replacement since that may be intentional (although those values will
-        # likely fail subsequent validation).
+        # likely fail subsequent validation).  We also don't consider defaults when applying values to the
+        # schema-level properties since these settings are function of a defined attribute.
 
         schema = self.schema_mgr.get_schema(self.schemaspace, metadata.schema_name)
 
-        meta_properties = schema['properties']['metadata']['properties']
-        property_defaults = {}
-        for name, property in meta_properties.items():
-            if 'default' in property:
-                property_defaults[name] = property['default']
+        def _update_instance(target_prop: str, schema_properties: Dict, instance: Union[Metadata, Dict]) -> None:
+            property_defaults = {}
+            for name, property in schema_properties.items():
+                if target_prop in property:
+                    property_defaults[name] = property[target_prop]
 
-        if property_defaults:  # schema defines defaulted properties
-            instance_properties = metadata.metadata
-            for name, default in property_defaults.items():
-                if name not in instance_properties:
-                    instance_properties[name] = default
+            if property_defaults:  # schema defines defaulted properties
+                if isinstance(instance, Metadata):  # schema properties, updated constants
+                    for name, default in property_defaults.items():
+                        if hasattr(instance, name):
+                            setattr(instance, name, default)
+                else:  # instance properties, update missing defaults
+                    instance_properties = instance
+                    for name, default in property_defaults.items():
+                        if name not in instance_properties:
+                            instance_properties[name] = default
+
+        # Update default properties of instance properties
+        _update_instance("default", schema['properties']['metadata']['properties'], metadata.metadata)
+
+        # Update const properties of schema properties
+        _update_instance("const", schema['properties'], metadata)

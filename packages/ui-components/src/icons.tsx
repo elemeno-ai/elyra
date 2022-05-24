@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2021 Elyra Authors
+ * Copyright 2018-2022 Elyra Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 import { LabIcon } from '@jupyterlab/ui-components';
 
-import airflowSvg from '../style/icons/airflow.svg';
-import argoSvg from '../style/icons/argo.svg';
 import clearPipelineSvg from '../style/icons/clear-pipeline.svg';
 import elyraSvg from '../style/icons/codait-piebrainlogo-jupyter-color.svg';
 import codeSnippetSvg from '../style/icons/code-snippet.svg';
@@ -27,7 +25,6 @@ import errorIconSvg from '../style/icons/error.svg';
 import exportPipelineSvg from '../style/icons/export-pipeline.svg';
 import helpIconSvg from '../style/icons/help.svg';
 import importSvg from '../style/icons/import.svg';
-import kubeflowSvg from '../style/icons/kubeflow.svg';
 import pipelineComponentSvg from '../style/icons/pipeline-components.svg';
 import pipelineSvg from '../style/icons/pipeline-flow.svg';
 import pyIconSvg from '../style/icons/py-logo.svg';
@@ -41,14 +38,6 @@ export const importIcon = new LabIcon({
   name: 'elyra:import',
   svgstr: importSvg
 });
-export const airflowIcon = new LabIcon({
-  name: 'elyra:airflow',
-  svgstr: airflowSvg
-});
-export const argoIcon = new LabIcon({
-  name: 'elyra:argo',
-  svgstr: argoSvg
-});
 export const codeSnippetIcon = new LabIcon({
   name: 'elyra:code-snippet',
   svgstr: codeSnippetSvg
@@ -57,16 +46,12 @@ export const dragDropIcon = new LabIcon({
   name: 'elyra:dragdrop',
   svgstr: dragDropSvg
 });
-export const kubeflowIcon = new LabIcon({
-  name: 'elyra:kfp',
-  svgstr: kubeflowSvg
-});
 export const elyraIcon = new LabIcon({ name: 'elyra:elyra', svgstr: elyraSvg });
 export const pipelineIcon = new LabIcon({
   name: 'elyra:pipeline',
   svgstr: pipelineSvg
 });
-export const pipelineComponentsIcon = new LabIcon({
+export const componentCatalogIcon = new LabIcon({
   name: 'elyra:pipeline-components',
   svgstr: pipelineComponentSvg
 });
@@ -141,11 +126,14 @@ export class IconUtil {
     let svgstr = icon.svgstr;
 
     if (fillColor) {
-      svgstr = svgstr.replace(/fill="[^(none)]+?"/gi, `fill="${fillColor}"`);
+      svgstr = svgstr.replace(
+        /fill="(?:(?!none).)+?"/gi,
+        `fill="${fillColor}"`
+      );
     }
     if (strokeColor) {
       svgstr = svgstr.replace(
-        /stroke="[^(none)]+?"/gi,
+        /stroke="(?:(?!none).)+?"/gi,
         `stroke="${strokeColor}"`
       );
     }

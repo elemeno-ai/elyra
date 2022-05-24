@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -165,6 +165,13 @@ def test_manager_get_include_invalid(tests_manager):
     assert len(metadata_list) == 5
 
 
+def test_manager_get_of_schema(tests_manager):
+    metadata_list = tests_manager.get_all(include_invalid=True)
+    assert len(metadata_list) == 5
+    metadata_list = tests_manager.get_all(include_invalid=True, of_schema='metadata-test')
+    assert len(metadata_list) == 3  # does not include metadata with schema {unknown} and metadata-testxxx
+
+
 def test_manager_get_bad_json(tests_manager):
     with pytest.raises(ValueError) as ve:
         tests_manager.get("bad")
@@ -189,7 +196,6 @@ def test_manager_get_none(tests_manager, schemaspace_location):
 
 
 def test_manager_get_all_none(tests_manager, schemaspace_location):
-    # TODO - there is no schemaspace removal - test requires update
     # Delete the schemaspace contents and attempt listing metadata
     _remove_schemaspace(tests_manager.metadata_store, schemaspace_location)
     assert tests_manager.schemaspace_exists() is False
@@ -203,7 +209,6 @@ def test_manager_get_all_none(tests_manager, schemaspace_location):
 def test_manager_add_remove_valid(tests_manager, schemaspace_location):
     metadata_name = 'valid_add_remove'
 
-    # TODO - there is no schemaspace removal - test requires update
     # Remove schemaspace_location and ensure it gets created
     _remove_schemaspace(tests_manager.metadata_store, schemaspace_location)
 
@@ -652,7 +657,6 @@ def test_manager_hierarchy_remove(tests_hierarchy_manager, factory_location, sha
 
 # ########################## MetadataStore Tests ###########################
 def test_store_schemaspace(store_manager, schemaspace_location):
-    # TODO - there is no schemaspace removal - test requires update
     # Delete the metadata dir contents and attempt listing metadata
     _remove_schemaspace(store_manager, schemaspace_location)
     assert store_manager.schemaspace_exists() is False
@@ -668,7 +672,6 @@ def test_store_fetch_instances(store_manager):
 
 
 def test_store_fetch_no_schemaspace(store_manager, schemaspace_location):
-    # TODO - there is no schemaspace removal - test requires update
     # Delete the schemaspace contents and attempt listing metadata
     _remove_schemaspace(store_manager, schemaspace_location)
 
@@ -689,7 +692,6 @@ def test_store_fetch_missing(store_manager):
 
 
 def test_store_store_instance(store_manager, schemaspace_location):
-    # TODO - there is no schemaspace removal - test requires update
     # Remove schemaspace to test raw creation and confirm perms
     _remove_schemaspace(store_manager, schemaspace_location)
 
@@ -743,9 +745,6 @@ def test_store_delete_instance(store_manager, schemaspace_location):
         metadata_file = os.path.join(schemaspace_location, 'valid.json')
         assert not os.path.exists(metadata_file)
 
-
-# ########################## SchemaManager Tests ###########################
-# TODO - add tests for SchemaManagr, Schemaspaces, and SchemaProviders
 
 # ########################## Error Tests ###########################
 def test_error_metadata_not_found():

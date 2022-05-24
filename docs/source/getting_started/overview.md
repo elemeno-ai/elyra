@@ -1,6 +1,6 @@
 <!--
 {% comment %}
-Copyright 2018-2021 Elyra Authors
+Copyright 2018-2022 Elyra Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ The pipeline editor feature can optionally be [installed as a stand-alone extens
 
 #### Ability to run a notebook, Python or R script as a batch job
 
-Elyra extends the Jupyter Notebook UI to to allow for execution of a notebook as a batch job in local or remote cloud environments. This feature leverages the AI pipelines feature and requires either a Kubeflow Pipelines or Apache Airflow deployment via a [runtime configuration](../user_guide/runtime-conf).
+Elyra extends the Jupyter Notebook UI to allow for execution of a notebook as a batch job in local or remote cloud environments. This feature leverages the AI pipelines feature and requires either a Kubeflow Pipelines or Apache Airflow deployment via a [runtime configuration](../user_guide/runtime-conf).
 
 To run a notebook as a batch job open the notebook and select `Run as Pipeline` button from the menu bar.
 
@@ -80,6 +80,9 @@ to share resources across distributed clusters such as Apache Spark, Kubernetes,
 
 It simplifies the task of running notebooks interactively on cloud machines,
 seamlessly leveraging the power of cloud-based resources such as GPUs and TPUs.
+
+Refer to the 
+[_Deploying Elyra & JupyterHub in a Kubernetes environment_ topic](../recipes/deploying-elyra-in-a-jupyterhub-environment.md) for an overview on how to deploy Elyra, JupyterHub and the Jupyter Enterprise Gateway on Kubernetes.
 
 #### Python and R scripts execution support
 

@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,22 +14,28 @@
 # limitations under the License.
 #
 from abc import abstractmethod
-from http import HTTPStatus
+from enum import Enum
+from importlib import import_module
+import json
 from logging import Logger
-import os
-from queue import Empty
-from queue import Queue
-from threading import Thread
 from types import SimpleNamespace
 from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Tuple
 
-from jupyter_core.paths import ENV_JUPYTER_PATH
-import requests
 from traitlets.config import LoggingConfigurable
-from traitlets.traitlets import Integer
+
+# Rather than importing only the CatalogEntry class needed in the Component parse
+# type hint below, the catalog_connector module must be imported in its
+# entirety in order to avoid a circular reference issue
+try:
+    from elyra.pipeline import catalog_connector
+except ImportError:
+    import sys
+    catalog_connector = sys.modules[__package__ + '.catalog_connector']
+from elyra.pipeline.runtime_type import RuntimeProcessorType
 
 
 class ComponentParameter(object):
@@ -45,6 +51,10 @@ class ComponentParameter(object):
                  required: bool = False,
                  control: str = "custom",
                  control_id: str = "StringControl",
+                 one_of_control_types: Optional[List[Tuple[str, str, str]]] = None,
+                 default_control_type: str = "StringControl",
+                 default_data_type: str = "string",
+                 allow_no_options: Optional[bool] = False,
                  items: Optional[List[str]] = None):
         """
         :param id: Unique identifier for a property
@@ -54,6 +64,8 @@ class ComponentParameter(object):
         :param description: A description of the property for display
         :param control: The control of the property on the display, e.g. custom or readonly
         :param control_id: The control type of the property, if the control is 'custom', e.g. StringControl, EnumControl
+        :param one_of_control_types: A list of control types to be used when 'OneOfControl' type is the primary control
+        :param default_control_type: The default control type to use when 'OneOfControl type is the primary control
         :param items: For properties with a control of 'EnumControl', the items making up the enum
         :param required: Whether the property is required
         """
@@ -71,6 +83,10 @@ class ComponentParameter(object):
         self._description = description
         self._control = control
         self._control_id = control_id
+        self._one_of_control_types = one_of_control_types
+        self._default_control_type = default_control_type
+        self._default_data_type = default_data_type
+        self._allow_no_options = allow_no_options
         self._items = items or []
 
         # Check description for information about 'required' parameter
@@ -111,6 +127,41 @@ class ComponentParameter(object):
         return self._control_id
 
     @property
+    def one_of_control_types(self) -> List[Tuple[str, str, str]]:
+        """
+        The `OneOfControl` controller is an encapsulating control ID that allows users to select
+        between multiple input types when configuring the component. For instance, in Airflow, a
+        component parameter can take in, as input, both a value as well as an output from a parent
+        node.
+        When using the `OneOfControl` as the primary control ID for the component parameter,
+        `one_of_control_types` provides canvas a list of control IDs that will be used by the
+        `OneOfControl` controller. These control IDs are what allow the user to select different
+        types of inputs.
+        :return: A list of 3-tuples containing the default_control_type, data_type, label associated with controller
+        """
+        return self._one_of_control_types
+
+    @property
+    def default_control_type(self) -> str:
+        """
+            The `default_control_type` is the control type that will be displayed by default when
+            first opening the component's parameters in the pipeline editor.
+        """
+        return self._default_control_type
+
+    @property
+    def default_data_type(self) -> str:
+        """
+            The `default_data_type` is the first data type that is assigned to this specific parameter
+            after parsing the component specification.
+        """
+        return self._default_data_type
+
+    @property
+    def allow_no_options(self) -> bool:
+        return self._allow_no_options
+
+    @property
     def items(self) -> List[str]:
         return self._items
 
@@ -124,28 +175,36 @@ class Component(object):
     Represents a generic or runtime-specific component
     """
 
-    def __init__(self, id: str, name: str,
+    def __init__(self,
+                 id: str,
+                 name: str,
                  description: Optional[str],
-                 location_type: str,
-                 location: str,
-                 runtime: Optional[str] = None,
+                 catalog_type: str,
+                 component_reference: Any,
+                 definition: Optional[str] = None,
+                 runtime_type: Optional[str] = None,
                  op: Optional[str] = None,
                  categories: Optional[List[str]] = None,
                  properties: Optional[List[ComponentParameter]] = None,
                  extensions: Optional[List[str]] = None,
-                 parameter_refs: Optional[dict] = None):
+                 parameter_refs: Optional[dict] = None,
+                 package_name: Optional[str] = None):
         """
         :param id: Unique identifier for a component
         :param name: The name of the component for display
         :param description: The description of the component
-        :param location_type: Indicates the type of component definition resource
+        :param catalog_type: Indicates the type of component definition resource
                               location; one of ['url', filename', 'directory]
-        :param location: The location of the component definition
-        :param runtime: The runtime of the component (e.g. KFP or Airflow)
+        :param component_reference: Source information to help locate the component definition
+        :param definition: The content of the specification file for this component
+        :param runtime_type: The runtime type of the component (e.g. KUBEFLOW_PIPELINES, APACHE_AIRFLOW, etc.)
         :param op: The operation name of the component; used by generic components in rendering the palette
-        :param categories: A list of categories that this component belongs to
+        :param categories: A list of categories that this component belongs to; used to organize component
+                           in the palette
         :param properties: The set of properties for the component
         :param extensions: The file extension used by the component
+        :param package_name: The fully qualified package name (excluding class name) of the file associated
+            with this component
         """
 
         if not id:
@@ -156,29 +215,31 @@ class Component(object):
         self._id = id
         self._name = name
         self._description = description
-        self._location_type = location_type
-        self._location = location
+        self._catalog_type = catalog_type
+        self._component_reference = component_reference
 
-        self._runtime = runtime
+        self._definition = definition
+        self._runtime_type = runtime_type
         self._op = op
         self._categories = categories or []
         self._properties = properties
 
         if not parameter_refs:
-            if self._location_type == "elyra":
+            if self._catalog_type == "elyra":
                 parameter_refs = {
                     "filehandler": "filename"
                 }
             else:
                 parameter_refs = {}
 
-        if extensions and not parameter_refs.get('filehandler'):
+        if self._catalog_type == "elyra" and extensions and not parameter_refs.get('filehandler'):
             Component._log_warning(f"Component '{self._id}' specifies extensions '{extensions}' but \
                                    no entry in the 'parameter_ref' dictionary for 'filehandler' and \
                                    cannot participate in drag and drop functionality as a result.")
 
         self._extensions = extensions
         self._parameter_refs = parameter_refs
+        self._package_name = package_name
 
     @property
     def id(self) -> str:
@@ -193,16 +254,32 @@ class Component(object):
         return self._description
 
     @property
-    def location_type(self) -> str:
-        return self._location_type
+    def catalog_type(self) -> str:
+        return self._catalog_type
 
     @property
-    def location(self) -> str:
-        return self._location
+    def component_reference(self) -> Any:
+        return self._component_reference
 
     @property
-    def runtime(self) -> Optional[str]:
-        return self._runtime
+    def component_source(self) -> str:
+        """
+        Informational property consisting of the catalog type from which
+        this component originates and the reference information used to
+        locate it within that catalog.
+        """
+        return json.dumps({
+            "catalog_type": self.catalog_type,
+            "component_ref": self.component_reference
+        })
+
+    @property
+    def definition(self) -> str:
+        return self._definition
+
+    @property
+    def runtime_type(self) -> Optional[RuntimeProcessorType]:
+        return self._runtime_type
 
     @property
     def op(self) -> Optional[str]:
@@ -227,6 +304,28 @@ class Component(object):
     def parameter_refs(self) -> dict:
         return self._parameter_refs
 
+    @property
+    def import_statement(self) -> Optional[str]:
+        if not self._package_name:
+            return None
+        return f"from {self._package_name} import {self._name}"
+
+    @property
+    def input_properties(self) -> List[ComponentParameter]:
+        return [prop for prop in self._properties if prop.data_type != 'outputpath']
+
+    @property
+    def output_properties(self) -> List[ComponentParameter]:
+        return [prop for prop in self._properties if prop.data_type == 'outputpath']
+
+    @property
+    def file_extension(self) -> Optional[str]:
+        """
+        The file extension of the definition file representing this
+        Component.
+        """
+        return self.extensions[0] if self.extensions else None
+
     @staticmethod
     def _log_warning(msg: str, logger: Optional[Logger] = None):
         if logger:
@@ -235,241 +334,37 @@ class Component(object):
             print(f"WARNING: {msg}")
 
 
-class ComponentReader(LoggingConfigurable):
-    """
-    Abstract class to model component_entry readers that can read components from different locations
-    """
-    location_type: str = None
-
-    max_readers = Integer(3, config=True, allow_none=True,
-                          help="""Sets the number of reader threads""")
-
-    def __init__(self, file_types: List[str]):
-        super().__init__()
-        self.file_types = file_types
-
-    @property
-    def resource_type(self):
-        """
-        The RuntimePipelineProcessor accesses this property in order to
-        process components on pipeline submit/export. The value must be
-        one of ('filename', 'url').
-        """
-        return self.location_type
-
-    @abstractmethod
-    def read_component_definition(self,
-                                  location: str,
-                                  location_to_def: Dict[str, str]) -> Dict[str, str]:
-        """
-        Read an absolute location to get the contents of a component specification file
-
-        :param location: an absolute path to the specification file to read
-        :param location_to_def: a mapping of component locations to file contents
-
-        :returns: the given 'location_to_def' object, optionally including a new
-                  key-value pair if the given component location is successfully read
-        """
-        raise NotImplementedError()
-
-    def read_component_definitions(self, locations: List[str]) -> Dict[str, str]:
-        """
-        This function starts a number of threads ('max_reader' or fewer) that read component
-        definitions in parallel.
-
-        The 'location_to_def' variable is a mapping of a component location to its content.
-        As a mutable object, this dictionary provides a means to retrieve a return value for
-        each thread. If a thread is able to successfully read the content of the given
-        component file location, a location-to-content mapping is added to 'location_to_def'.
-        """
-        location_to_def = {}
-
-        loc_q = Queue()
-        for location in self.get_absolute_locations(locations):
-            loc_q.put_nowait(location)
-
-        def read_with_thread():
-            """Get a location from the queue and read contents"""
-            while not loc_q.empty():
-                try:
-                    self.log.debug("Retrieving component definition file location from queue...")
-                    loc = loc_q.get(timeout=.1)
-                except Empty:
-                    continue
-
-                try:
-                    self.log.debug(f"Attempting read of component definition file at location '{loc}'...")
-                    self.read_component_definition(loc, location_to_def)
-                except Exception:
-                    self.log.warning(f"Could not read component definition file at location '{loc}'. Skipping...")
-
-                loc_q.task_done()
-
-        # Start 'max_reader' reader threads if registry includes more than 'max_reader'
-        # number of locations, else start one thread per location
-        num_threads = min(loc_q.qsize(), self.max_readers)
-        for i in range(num_threads):
-            Thread(target=read_with_thread).start()
-
-        # Wait for all queued locations to be processed
-        loc_q.join()
-
-        return location_to_def
-
-    @abstractmethod
-    def get_absolute_locations(self, paths: List[str]) -> List[str]:
-        """
-        Returns a list of absolute paths to component specification file(s)
-        based on the array of potentially relative locations given
-        """
-        raise NotImplementedError()
-
-
-class FilesystemComponentReader(ComponentReader):
-    """
-    Read a singular component definition from the local filesystem
-    """
-    location_type = 'filename'
-
-    def determine_location(self, location_path: str) -> str:
-        """
-        Determines the absolute location of a given path. Error
-        checking is delegated to the calling function
-        """
-        # Expand path to include user home if necessary
-        path = os.path.expanduser(location_path)
-
-        # Check for absolute path
-        if os.path.isabs(path):
-            return path
-
-        # If path is not absolute, default to the Jupyter share location
-        path = os.path.join(ENV_JUPYTER_PATH[0], 'components', path)
-        return path
-
-    def read_component_definition(self,
-                                  location: str,
-                                  location_to_def: Dict[str, str]) -> Dict[str, str]:
-        if not os.path.exists(location):
-            self.log.warning(f"Invalid location for component: {location}")
-        else:
-            with open(location, 'r') as f:
-                location_to_def[location] = f.read()
-
-        return location_to_def
-
-    def get_absolute_locations(self, paths: List[str]) -> List[str]:
-        absolute_paths = []
-        for path in paths:
-            absolute_path = self.determine_location(path)
-            if not os.path.exists(absolute_path):
-                self.log.warning(f"File does not exist -> {absolute_path}")
-            absolute_paths.append(absolute_path)
-        return absolute_paths
-
-
-class DirectoryComponentReader(FilesystemComponentReader):
-    """
-    Read component definitions from a local directory
-    """
-    location_type = 'directory'
-
-    def get_absolute_locations(self, paths: List[str]) -> List[str]:
-        absolute_paths = []
-        for path in paths:
-            absolute_path = self.determine_location(path)
-            if not os.path.exists(absolute_path):
-                self.log.warning(f"Invalid directory -> {absolute_path}")
-                continue
-
-            for filename in os.listdir(absolute_path):
-                if filename.endswith(tuple(self.file_types)):
-                    absolute_paths.append(os.path.join(absolute_path, filename))
-
-        return absolute_paths
-
-    @property
-    def resource_type(self):
-        """
-        The RuntimePipelineProcessor accesses this property in order to process
-        components on pipeline submit/export. The superclass location_type is
-        used because the value must be one of ('filename', 'url').
-        """
-        return super().location_type
-
-
-class UrlComponentReader(ComponentReader):
-    """
-    Read a singular component definition from a url
-    """
-    location_type = 'url'
-
-    def read_component_definition(self,
-                                  location: str,
-                                  location_to_def: Dict[str, str]) -> Dict[str, str]:
-        try:
-            res = requests.get(location)
-        except Exception as e:
-            self.log.warning(f"Failed to connect to URL for component: {location}: {str(e)}")
-        else:
-            if res.status_code != HTTPStatus.OK:
-                self.log.warning(f"Invalid location for component: {location} (HTTP code {res.status_code})")
-            else:
-                location_to_def[location] = res.text
-
-        return location_to_def
-
-    def get_absolute_locations(self, paths: List[str]) -> List[str]:
-        return paths
-
-
-class GitHubComponentReader(UrlComponentReader):
-    """
-    Read component definitions from a github repo
-    """
-    location_type = 'github'
-
-    def get_absolute_locations(self, paths: List[str]) -> List[str]:
-        pass
-
-    @property
-    def resource_type(self):
-        """
-        The RuntimePipelineProcessor accesses this property in order to process
-        components on pipeline submit/export. The superclass location_type is
-        used because the value must be one of ('filename', 'url').
-        """
-        return super().location_type
-
-
 class ComponentParser(LoggingConfigurable):  # ABC
-    _component_platform = None
+    component_platform: RuntimeProcessorType = None
+    _file_types: List[str] = None
+    _parser_class_map: Dict[str, str] = {
+        'APACHE_AIRFLOW': 'elyra.pipeline.airflow.component_parser_airflow:AirflowComponentParser',
+        'KUBEFLOW_PIPELINES': 'elyra.pipeline.kfp.component_parser_kfp:KfpComponentParser'
+    }
 
-    @property
-    def component_platform(self) -> str:
-        return self._component_platform
+    @classmethod
+    def create_instance(cls, platform: RuntimeProcessorType) -> 'ComponentParser':
+        """
+        Class method that creates the appropriate instance of ComponentParser based on platform type name.
+        """
+        try:
+            module_name, class_name = cls._parser_class_map[platform.name].split(':')
+            module = import_module(module_name)
+            return getattr(module, class_name)()
+        except Exception as e:
+            raise RuntimeError(f"Could not get appropriate ComponentParser class: {e}")
 
     @property
     def file_types(self) -> List[str]:
         return self._file_types
 
     @abstractmethod
-    def parse(self, registry_entry: SimpleNamespace) -> Optional[List[Component]]:
+    def parse(self, catalog_entry: 'catalog_connector.CatalogEntry') -> Optional[List[Component]]:
         """
-        Parse a component definition given in the registry entry and return
+        Parse a component definition given in the catalog entry and return
         a list of fully-qualified Component objects
         """
         raise NotImplementedError()
-
-    def get_component_id(self, location: str, name: str) -> str:
-        """
-        Get a unique id for a component based on its file basename and
-        it's given name.
-        """
-        file_basename = os.path.basename(location)
-        filename = os.path.splitext(file_basename)[0]
-        component_name = f"{filename}_{name.replace(' ', '')}"
-        return component_name
 
     def _format_description(self, description: str, data_type: str) -> str:
         """
@@ -499,12 +394,15 @@ class ComponentParser(LoggingConfigurable):  # ABC
                 data_type = option
                 if data_type in ['dict', 'dictionary']:
                     data_type = "dictionary"
-                elif data_type in ['list', 'set', 'array', 'arr']:
+                    default_value = {}
+                else:  # data_type is one of ['list', 'set', 'array', 'arr']
                     data_type = "list"
+                    default_value = []
 
                 # Since we know the type, create our return value and bail
                 data_type_info = ComponentParser.create_data_type_info(parsed_data=parsed_type_lowered,
-                                                                       data_type=data_type)
+                                                                       data_type=data_type,
+                                                                       default_value=default_value)
                 break
         else:  # None of the container types were found...
             # Standardize type names
@@ -515,11 +413,19 @@ class ComponentParser(LoggingConfigurable):  # ABC
                 data_type_info = ComponentParser.create_data_type_info(parsed_data=parsed_type_lowered,
                                                                        data_type="number",
                                                                        control_id="NumberControl",
+                                                                       default_control_type="NumberControl",
                                                                        default_value=0)
+            elif any(word in parsed_type_lowered for word in ['float']):
+                data_type_info = ComponentParser.create_data_type_info(parsed_data=parsed_type_lowered,
+                                                                       data_type="number",
+                                                                       control_id="NumberControl",
+                                                                       default_control_type="NumberControl",
+                                                                       default_value=0.0)
             elif any(word in parsed_type_lowered for word in ['bool', 'boolean']):
                 data_type_info = ComponentParser.create_data_type_info(parsed_data=parsed_type_lowered,
                                                                        data_type="boolean",
                                                                        control_id="BooleanControl",
+                                                                       default_control_type="BooleanControl",
                                                                        default_value=False)
             else:  # Let this be undetermined.  Callers should check for this status and adjust
                 data_type_info = ComponentParser.create_data_type_info(parsed_data=parsed_type_lowered,
@@ -531,9 +437,14 @@ class ComponentParser(LoggingConfigurable):  # ABC
     @staticmethod
     def create_data_type_info(parsed_data: str,
                               data_type: str = 'string',
+                              default_data_type: str = 'string',
+                              data_label: str = None,
                               default_value: Any = '',
                               required: bool = True,
+                              one_of_control_types: Optional[List[Tuple[str, str, str]]] = None,
                               control_id: str = 'StringControl',
+                              default_control_type: str = 'StringControl',
+                              allow_no_options: Optional[bool] = False,
                               control: str = 'custom',
                               undetermined: bool = False) -> SimpleNamespace:
         """Returns a SimpleNamespace instance that contains the current state of data-type parsing.
@@ -548,9 +459,21 @@ class ComponentParser(LoggingConfigurable):  # ABC
         """
         dti = SimpleNamespace(parsed_data=parsed_data,
                               data_type=data_type,
+                              default_data_type=default_data_type,
+                              data_label=data_label or ControllerMap[control_id].value,
                               default_value=default_value,
                               required=required,
+                              default_control_type=default_control_type,
+                              one_of_control_types=one_of_control_types,
                               control_id=control_id,
+                              allow_no_options=allow_no_options,
                               control=control,
                               undetermined=undetermined)
         return dti
+
+
+class ControllerMap(Enum):
+    StringControl = "Please enter a string value :"
+    NumberControl = "Please enter a number value :"
+    BooleanControl = "Please select or deselect the checkbox :"
+    NestedEnumControl = "Please select an output from a parent :"

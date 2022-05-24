@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from elyra.metadata.schema import Schemaspace
 
 
@@ -52,13 +51,13 @@ class CodeSnippets(Schemaspace):
                          description="Schemaspace for instances of Elyra code snippets configurations")
 
 
-class ComponentRegistries(Schemaspace):
-    COMPONENT_REGISTRIES_SCHEMASPACE_ID = "ae79159a-489d-4656-83a6-1adfbc567c70"
-    COMPONENT_REGISTRIES_SCHEMASPACE_NAME = "component-registries"
-    COMPONENT_REGISTRIES_SCHEMASPACE_DISPLAY_NAME = "Component Registries"
+class ComponentCatalogs(Schemaspace):
+    COMPONENT_CATALOGS_SCHEMASPACE_ID = "8dc89ca3-4b90-41fd-adb9-9510ad346620"
+    COMPONENT_CATALOGS_SCHEMASPACE_NAME = "component-catalogs"
+    COMPONENT_CATALOGS_SCHEMASPACE_DISPLAY_NAME = "Component Catalogs"
 
     def __init__(self, *args, **kwargs):
-        super().__init__(schemaspace_id=ComponentRegistries.COMPONENT_REGISTRIES_SCHEMASPACE_ID,
-                         name=ComponentRegistries.COMPONENT_REGISTRIES_SCHEMASPACE_NAME,
-                         display_name=ComponentRegistries.COMPONENT_REGISTRIES_SCHEMASPACE_DISPLAY_NAME,
-                         description="Schemaspace for instances of Elyra component registries configurations")
+        super().__init__(schemaspace_id=ComponentCatalogs.COMPONENT_CATALOGS_SCHEMASPACE_ID,
+                         name=ComponentCatalogs.COMPONENT_CATALOGS_SCHEMASPACE_NAME,
+                         display_name=ComponentCatalogs.COMPONENT_CATALOGS_SCHEMASPACE_DISPLAY_NAME,
+                         description="Schemaspace for instances of Elyra component catalog configurations")

@@ -1,6 +1,6 @@
 <!--
 {% comment %}
-Copyright 2018-2021 Elyra Authors
+Copyright 2018-2022 Elyra Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ limitations under the License.
 [![Downloads](https://pepy.tech/badge/elyra)](https://pepy.tech/project/elyra)
 [![Documentation Status](https://readthedocs.org/projects/elyra/badge/?version=latest)](https://elyra.readthedocs.io/en/latest/?badge=latest)
 [![GitHub](https://img.shields.io/badge/issue_tracking-github-blue.svg)](https://github.com/elyra-ai/elyra/issues)
+[![Homepage](https://img.shields.io/badge/homepage-elyra-fd9146.svg)](https://elyra-ai.github.io/website/)
 [![Gitter](https://badges.gitter.im/elyra-ai/community.svg)](https://gitter.im/elyra-ai/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 # Elyra
@@ -52,7 +53,7 @@ You can try out some of Elyra features using the [My Binder](https://mybinder.re
 
 Click on a link below to try Elyra, on a sandbox environment, without having to install anything.
 
-- [![Launch latest stable version](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/elyra-ai/elyra/v3.2.2?urlpath=lab/tree/binder-demo) (Latest stable version - see [changelog](/docs/source/getting_started/changelog.md) for recent updates)
+- [![Launch latest stable version](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/elyra-ai/elyra/v3.7.0?urlpath=lab/tree/binder-demo) (Latest stable version - see [changelog](/docs/source/getting_started/changelog.md) for recent updates)
 - [![Launch latest development version](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/elyra-ai/elyra/master?urlpath=lab/tree/binder-demo) (Development version - expect longer image load time due to just-in-time build)
 
 #### Using Docker
@@ -65,14 +66,14 @@ You can also try Elyra by running one of the docker images from [Docker Hub](htt
 The command below starts the most recent development build in a clean environment:
 
 ```
-docker run -it -p 8888:8888 elyra/elyra:3.2.2 jupyter lab --debug
+docker run -it -p 8888:8888 elyra/elyra:3.7.0 jupyter lab --debug
 ```
 
 To make a local directory containing your Notebooks (e.g. ${HOME}/opensource/jupyter-notebooks/) available in your
 docker container, you can use a mount command similar to the following:
 
 ```
-docker run -it -p 8888:8888 -v ${HOME}/opensource/jupyter-notebooks/:/home/jovyan/work -w /home/jovyan/work elyra/elyra:3.2.2 jupyter lab --debug
+docker run -it -p 8888:8888 -v ${HOME}/opensource/jupyter-notebooks/:/home/jovyan/work -w /home/jovyan/work elyra/elyra:3.7.0 jupyter lab --debug
 ```
 
 These should produce output similar to that below, where you can then find the URL to be used
@@ -91,7 +92,7 @@ Elyra can be installed from PyPI:
 
 ### Prerequisites :
 * [NodeJS 12+](https://nodejs.org/en/)
-* [Python 3.6+](https://www.python.org/downloads/)
+* [Python 3.7+](https://www.python.org/downloads/)
 
 ##### Optional :
 * [Miniconda](https://docs.conda.io/en/latest/miniconda.html) 
@@ -101,6 +102,19 @@ Elyra can be installed from PyPI:
 **NOTE:** On November 2020, a new version of PIP (20.3) was released with a new, "2020" resolver. This resolver does not yet work with Elyra and might lead to errors in installation. In order to install Elyra, you need to either downgrade pip to version 20.2.4 `pip install --upgrade pip==20.2.4` or, in case you use pip 20.3 (or later), you need to add option `--use-deprecated legacy-resolver` to your pip install command.
 
 * [JupyterLab](https://github.com/jupyterlab/jupyterlab) 3.x is supported on **Elyra 2.0.0 and above**
+
+  Install Elyra from PyPI ( Elyra >= 3.7.0 ):
+
+  ```bash
+  pip3 install --upgrade "elyra[all]>=3.7.0"
+  ```
+
+  Install fom Conda ( Elyra >= 3.7.0 ):
+  ```bash
+  conda install -c conda-forge "elyra[all]>=3.7.0"
+  ```
+
+* For versions of Elyra prior to 3.7 `jupyter lab build` must be run after install to enable the extensions.
 
   Install Elyra from PyPI ( Elyra >= 3.1.0 ):
 
@@ -148,24 +162,6 @@ Elyra can be installed from PyPI:
 Run the following commands to verify the installation. Note that in the example output below the `[version]` placeholder is displayed instead of an actual version identifier, which might change with every release.
 
 ```bash
-jupyter serverextension list
-```
-Should output:
-``` 
-config dir: /usr/local/etc/jupyter
-    jupyter_resource_usage  enabled 
-    - Validating...
-      jupyter_resource_usage  OK
-    jupyterlab  enabled 
-    - Validating...
-      jupyterlab [version] OK
-    nbdime  enabled 
-    - Validating...
-      nbdime [version] OK
-```
-
-
-```bash
 jupyter server extension list
 ```
 Should output:
@@ -175,13 +171,16 @@ Config dir: /.../.jupyter
 Config dir: /.../etc/jupyter
     elyra enabled
     - Validating elyra...
-      elyra [version] OK
+      elyra  OK
     jupyter_lsp enabled
     - Validating jupyter_lsp...
       jupyter_lsp [version] OK
     jupyter_resource_usage enabled
     - Validating jupyter_resource_usage...
-      jupyter_resource_usage  OK
+      jupyter_resource_usage [version] OK
+    jupyter_server_mathjax enabled
+    - Validating jupyter_server_mathjax...
+      jupyter_server_mathjax  OK
     jupyterlab enabled
     - Validating jupyterlab...
       jupyterlab [version] OK
@@ -208,20 +207,20 @@ Should output:
 ```      
 JupyterLab [version]
 /.../share/jupyter/labextensions
+        nbdime-jupyterlab [version] enabled OK
         @jupyter-server/resource-usage [version] enabled OK (python, jupyter-resource-usage)
         @krassowski/jupyterlab-lsp [version] enabled OK (python, jupyterlab_lsp)
-        @jupyterlab/git [version] enabled OK (python, jupyterlab-git)
-
-Other labextensions (built into JupyterLab)
-   app dir: /.../share/jupyter/lab
         @elyra/code-snippet-extension [version] enabled OK
+        @elyra/code-viewer-extension [version] enabled OK
         @elyra/metadata-extension [version] enabled OK
         @elyra/pipeline-editor-extension [version] enabled OK
         @elyra/python-editor-extension [version] enabled OK
         @elyra/r-editor-extension [version] enabled OK
         @elyra/theme-extension [version] enabled OK
-        nbdime-jupyterlab [version] enabled OK        
-        
+        @jupyterlab/git [version] enabled OK (python, jupyterlab-git)
+
+Other labextensions (built into JupyterLab)
+   app dir: /.../share/jupyter/lab
 ```
 
 ## Starting Elyra

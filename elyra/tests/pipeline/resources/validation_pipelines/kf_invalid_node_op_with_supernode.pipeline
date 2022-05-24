@@ -11,14 +11,14 @@
         {
           "id": "fe08b42d-bd8c-4e97-8010-0503a3185427",
           "type": "execution_node",
-          "op": "run_notebook_using_papermill_Runnotebookusingpapermill",
+          "op": "elyra-kfp-examples-catalog:61e6f4141f65",
           "app_data": {
             "component_parameters": {
               "notebook": "../notebookA.ipynb",
               "parameters": "{}",
               "packages_to_install": "",
               "input_data": ""
-              },
+            },
             "label": "Run notebook using papermill",
             "component_source": "/Users/akchin/opt/anaconda3/envs/test-package/lib/python3.8/site-packages/elyra/pipeline/resources/kfp/run_notebook_using_papermill/component.yaml",
             "ui_data": {
@@ -71,12 +71,12 @@
         {
           "id": "bfa62a7e-4f55-4fb5-b358-a6f70278ae62",
           "type": "execution_node",
-          "op": "filter_text_using_shell_and_grep_Filtertext",
+          "op": "elyra-kfp-examples-catalog:737915b826e9",
           "app_data": {
             "component_parameters": {
               "text": "../B.txt",
               "pattern": ".*"
-              },
+            },
             "label": "Filter text",
             "component_source": "/Users/akchin/opt/anaconda3/envs/test-package/lib/python3.8/site-packages/elyra/pipeline/resources/kfp/filter_text_using_shell_and_grep/component.yaml",
             "ui_data": {
@@ -174,12 +174,12 @@
           },
           "comments": []
         },
-        "version": 5,
-        "runtime": "kfp",
+        "version": 6,
         "properties": {
           "name": "kf_invalid_node_op_with_supernode",
           "runtime": "Kubeflow Pipelines"
-        }
+        },
+        "runtime_type": "KUBEFLOW_PIPELINES"
       },
       "runtime_ref": ""
     },
@@ -192,9 +192,9 @@
           "op": "invalid_node_op",
           "app_data": {
             "component_parameters": {
-                "text": "B.txt",
-                "pattern": ".*"
-              },
+              "text": "B.txt",
+              "pattern": ".*"
+            },
             "label": "Filter text",
             "component_source": "/Users/akchin/opt/anaconda3/envs/test-package/lib/python3.8/site-packages/elyra/pipeline/resources/kfp/filter_text_using_shell_and_grep/component.yaml",
             "ui_data": {

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:experimental
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,20 +15,29 @@
 # limitations under the License.
 #
 
-# Ubuntu 18.04 LTS - Bionic
-FROM jupyterhub/k8s-singleuser-sample:0.10.6
+# Ubuntu 20.04.2 LTS (Focal Fossa)
+# Repository: https://hub.docker.com/r/jupyterhub/k8s-singleuser-sample/tags
+FROM jupyterhub/k8s-singleuser-sample:1.2.0
 
 ARG TAG="dev"
 
-USER root
+COPY requirements.txt .
 
-ADD start-elyra.sh /usr/local/bin/start-elyra.sh
+# Install Elyra and custom requirements
+RUN python3 -m pip install --quiet --no-cache-dir --use-deprecated=legacy-resolver \
+    elyra[all]=="$TAG" \
+ && python3 -m pip install -r requirements.txt \   
+ && rm -rf $HOME/.cache/yarn \
+ && rm -rf /opt/conda/share/jupyter/lab/staging/node_modules \
+ && rm requirements.txt
 
-RUN chmod ugo+x /usr/local/bin/start-elyra.sh && \
-    if [ "$TAG" == "dev" ] ; then \
-       apt-get update && apt-get install -y build-essential && \
-       rm -rf /var/lib/apt/lists/*; \
-    fi
+# Install component examples catalogs
+#  - this wail fail if the 'kfp-examples' pip extra is not installed
+RUN elyra-metadata create component-catalogs \
+    --schema_name=elyra-kfp-examples-catalog  \
+    --display_name="Kubeflow Pipelines examples" \
+    --runtime_type=KUBEFLOW_PIPELINES \
+    --categories="['examples']"
 
 USER $NB_USER
 
@@ -49,4 +58,3 @@ RUN conda remove --force -y terminado && \
     fi
 
 CMD ["/usr/local/bin/start-elyra.sh"]
-

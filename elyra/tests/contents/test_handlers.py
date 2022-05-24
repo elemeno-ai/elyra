@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,13 +14,14 @@
 # limitations under the License.
 #
 import json
+# import os
 
-from jupyter_server.tests.utils import expected_http_error
 import pytest
 from tornado.httpclient import HTTPClientError
 
 from elyra.tests.contents.test_utils import expected_response
 from elyra.tests.contents.test_utils import expected_response_empty
+from elyra.tests.util.handlers_utils import expected_http_error
 
 
 async def test_file_not_found(jp_fetch):
@@ -51,29 +52,29 @@ async def test_invalid_file_type(jp_fetch, create_text_file, text_filename):
     assert json.loads(response.body) == expected_response_empty
 
 
-async def test_valid_notebook(jp_fetch, create_notebook_file, notebook_filename):
-    response = await jp_fetch('elyra', 'contents/properties', notebook_filename)
+async def test_valid_notebook(jp_fetch, create_notebook_file):
+    response = await jp_fetch('elyra', 'contents/properties', create_notebook_file)
 
     assert response.code == 200
     assert json.loads(response.body) == expected_response
 
 
-async def test_valid_python_file(jp_fetch, create_python_file, python_filename):
-    response = await jp_fetch('elyra', 'contents/properties', python_filename)
+async def test_valid_python_file(jp_fetch, create_python_file):
+    response = await jp_fetch('elyra', 'contents/properties', create_python_file)
 
     assert response.code == 200
     assert json.loads(response.body) == expected_response
 
 
-async def test_valid_r_file(jp_fetch, create_r_file, r_filename):
-    response = await jp_fetch('elyra', 'contents/properties', r_filename)
+async def test_valid_r_file(jp_fetch, create_r_file):
+    response = await jp_fetch('elyra', 'contents/properties', create_r_file)
 
     assert response.code == 200
     assert json.loads(response.body) == expected_response
 
 
-async def test_empty_notebook(jp_fetch, create_empty_notebook_file, notebook_filename):
-    response = await jp_fetch('elyra', 'contents/properties', notebook_filename)
+async def test_empty_notebook(jp_fetch, create_empty_notebook_file):
+    response = await jp_fetch('elyra', 'contents/properties', create_empty_notebook_file)
 
     assert response.code == 200
     assert json.loads(response.body) == expected_response_empty

@@ -1,6 +1,6 @@
 <!--
 {% comment %}
-Copyright 2018-2021 Elyra Authors
+Copyright 2018-2022 Elyra Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -60,6 +60,12 @@ Download and install a [Python 3 version of Miniconda](https://docs.conda.io/en/
     conda install -y -c conda-forge/label/main nodejs
     ```
 
+* Install Yarn
+
+    ```
+    conda install -y -c conda-forge/label/main yarn
+    ```
+
 ### Setting up your Elyra Github repository
 
 * Fork the [Elyra Github repository](https://github.com/elyra-ai/elyra) (if you haven't already)
@@ -88,7 +94,9 @@ $ make
 clean                          Make a clean source tree and uninstall extensions
 container-images               Build all container images
 docs                           Build docs
-install-server                 Build and install backend only
+install-all                    Build and install, including examples
+install-examples               Install example pipeline components
+install-server                 Build and install backend
 install                        Build and install
 lint                           Run linters
 publish-container-images       Publish all container images

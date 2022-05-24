@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-import ast
 import os
 import tarfile
 from unittest import mock
@@ -23,7 +22,10 @@ import pytest
 import yaml
 
 from elyra.metadata.metadata import Metadata
+from elyra.pipeline.catalog_connector import FilesystemComponentCatalogConnector
+from elyra.pipeline.catalog_connector import UrlComponentCatalogConnector
 from elyra.pipeline.component import Component
+from elyra.pipeline.component_catalog import ComponentCache
 from elyra.pipeline.kfp.processor_kfp import KfpPipelineProcessor
 from elyra.pipeline.parser import PipelineParser
 from elyra.pipeline.pipeline import GenericOperation
@@ -40,6 +42,7 @@ def processor(setup_factory_data):
 
 @pytest.fixture
 def pipeline():
+    ComponentCache.instance().wait_for_all_cache_tasks()
     pipeline_resource = _read_pipeline_resource(
         'resources/sample_pipelines/pipeline_3_node_sample.json')
     return PipelineParser.parse(pipeline_resource)
@@ -272,23 +275,39 @@ def test_process_dictionary_value_function(processor):
 
 
 def test_processing_url_runtime_specific_component(monkeypatch, processor, sample_metadata, tmpdir):
+    # Define the appropriate reader for a URL-type component definition
+    kfp_supported_file_types = [".yaml"]
+    reader = UrlComponentCatalogConnector(kfp_supported_file_types)
+
     # Assign test resource location
     url = 'https://raw.githubusercontent.com/elyra-ai/elyra/master/' \
           'elyra/tests/pipeline/resources/components/filter_text.yaml'
 
+    # Read contents of given path -- read_component_definition() returns a
+    # a dictionary of component definition content indexed by path
+    entry_data = reader.get_entry_data({"url": url}, {})
+    component_definition = entry_data.definition
+
     # Instantiate a url-based component
-    component_id = 'filter-text'
+    component_id = 'test_component'
     component = Component(id=component_id,
                           name="Filter text",
                           description="",
                           op="filter-text",
-                          location_type="url",
-                          location=url,
-                          properties=[],
-                          categories=[])
+                          catalog_type="url-catalog",
+                          component_reference={"url": url},
+                          definition=component_definition,
+                          categories=[],
+                          properties=[])
 
-    # Replace cached component registry with single url-based component for testing
-    processor._component_registry._cached_components = {component_id: component}
+    # Fabricate the component cache to include single filename-based component for testing
+    ComponentCache.instance()._component_cache[processor._type.name] = {
+        "spoofed_catalog": {
+            "components": {
+                component_id: component
+            }
+        }
+    }
 
     # Construct hypothetical operation for component
     operation_name = "Filter text test"
@@ -306,7 +325,7 @@ def test_processing_url_runtime_specific_component(monkeypatch, processor, sampl
     # Build a mock runtime config for use in _cc_pipeline
     mocked_runtime = Metadata(name="test-metadata",
                               display_name="test",
-                              schema_name="airflow",
+                              schema_name="kfp",
                               metadata=sample_metadata)
 
     mocked_func = mock.Mock(return_value="default", side_effect=[mocked_runtime, sample_metadata])
@@ -336,37 +355,51 @@ def test_processing_url_runtime_specific_component(monkeypatch, processor, sampl
     pipeline_template = pipeline_yaml['spec']['templates'][0]
     assert pipeline_template['metadata']['annotations']['pipelines.kubeflow.org/task_display_name'] == operation_name
     assert pipeline_template['inputs']['artifacts'][0]['raw']['data'] == operation_params['text']
-
-    component_ref = pipeline_template['metadata']['annotations']['pipelines.kubeflow.org/component_ref']
-    component_ref = ast.literal_eval(component_ref)
-    assert component_ref['url'] == url
 
 
 def test_processing_filename_runtime_specific_component(monkeypatch, processor, sample_metadata, tmpdir):
+    # Define the appropriate reader for a filesystem-type component definition
+    kfp_supported_file_types = [".yaml"]
+    reader = FilesystemComponentCatalogConnector(kfp_supported_file_types)
+
     # Assign test resource location
-    relative_path = "kfp/filter_text_using_shell_and_grep.yaml"
+    absolute_path = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), '..', 'resources', 'components', "download_data.yaml")
+    )
+
+    # Read contents of given path -- read_component_definition() returns a
+    # a dictionary of component definition content indexed by path
+    entry_data = reader.get_entry_data({"path": absolute_path}, {})
+    component_definition = entry_data.definition
 
     # Instantiate a file-based component
-    component_id = "filter-text"
+    component_id = "test-component"
     component = Component(id=component_id,
-                          name="Filter text",
+                          name="Download data",
                           description="",
-                          op="filter-text",
-                          location_type="filename",
-                          location=relative_path,
+                          op="download-data",
+                          catalog_type="elyra-kfp-examples-catalog",
+                          component_reference={"path": absolute_path},
+                          definition=component_definition,
                           properties=[],
                           categories=[])
 
-    # Replace cached component registry with single filename-based component for testing
-    processor._component_registry._cached_components = {component_id: component}
+    # Fabricate the component cache to include single filename-based component for testing
+    ComponentCache.instance()._component_cache[processor._type.name] = {
+        "spoofed_catalog": {
+            "components": {
+                component_id: component
+            }
+        }
+    }
 
     # Construct hypothetical operation for component
-    operation_name = "Filter text test"
+    operation_name = "Download data test"
     operation_params = {
-        "text": "path/to/text.txt",
-        "pattern": "hello"
+        "url": "https://raw.githubusercontent.com/elyra-ai/elyra/master/tests/assets/helloworld.ipynb",
+        "curl_options": "--location"
     }
-    operation = Operation(id='filter-text-id',
+    operation = Operation(id='download-data-id',
                           type='execution_node',
                           classifier=component_id,
                           name=operation_name,
@@ -376,7 +409,7 @@ def test_processing_filename_runtime_specific_component(monkeypatch, processor, 
     # Build a mock runtime config for use in _cc_pipeline
     mocked_runtime = Metadata(name="test-metadata",
                               display_name="test",
-                              schema_name="airflow",
+                              schema_name="kfp",
                               metadata=sample_metadata)
 
     mocked_func = mock.Mock(return_value="default", side_effect=[mocked_runtime, sample_metadata])
@@ -387,7 +420,7 @@ def test_processing_filename_runtime_specific_component(monkeypatch, processor, 
                         name='kfp_test',
                         runtime='kfp',
                         runtime_config='test',
-                        source='filter_text.pipeline')
+                        source='download_data.pipeline')
     pipeline.operations[operation.id] = operation
 
     # Establish path and function to construct pipeline
@@ -405,8 +438,4 @@ def test_processing_filename_runtime_specific_component(monkeypatch, processor, 
     # Check the pipeline file contents for correctness
     pipeline_template = pipeline_yaml['spec']['templates'][0]
     assert pipeline_template['metadata']['annotations']['pipelines.kubeflow.org/task_display_name'] == operation_name
-    assert pipeline_template['inputs']['artifacts'][0]['raw']['data'] == operation_params['text']
-
-    component_ref = pipeline_template['metadata']['annotations']['pipelines.kubeflow.org/component_ref']
-    component_ref = ast.literal_eval(component_ref)
-    assert relative_path in component_ref['url']
+    assert pipeline_template['container']['command'][3] == operation_params['url']

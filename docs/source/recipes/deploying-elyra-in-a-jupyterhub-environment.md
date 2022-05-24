@@ -1,6 +1,6 @@
 <!--
 {% comment %}
-Copyright 2018-2021 Elyra Authors
+Copyright 2018-2022 Elyra Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -42,7 +42,7 @@ singleuser:
   image:
     name: elyra/elyra
     # change to a specific release version as appropriate
-    tag: 3.2.2
+    tag: 3.7.0
     # disable this in a production environment
     pullPolicy: "Always"
   storage:
@@ -94,7 +94,7 @@ singleuser:
   image:
     name: elyra/elyra
     # change to a specific release version as appropriated
-    tag: 3.2.2
+    tag: 3.7.0
     # disable this in a production environment
     pullPolicy: "Always"
   storage:
@@ -112,7 +112,7 @@ required to run elyra, and that could be used to customize your environment with
 packages required by your workloads, or any other customizations needed.
 
 ```dockerfile
-FROM elyra/elyra:3.2.2
+FROM elyra/elyra:3.7.0
 
 ...
 

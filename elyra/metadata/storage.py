@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -101,6 +101,9 @@ class FileMetadataCache(SingletonConfigurable):
             self.observed_dirs = set()  # Tracks which directories are being watched
             self.observer = Observer()
             self.observer.start()
+        else:
+            self.log.info("The file metadata cache is currently disabled via configuration. "
+                          "Set FileMetadataCache.enabled=True to enable instance caching.")
 
     def __len__(self) -> int:
         """Return the number of running kernels."""
@@ -196,6 +199,8 @@ class FileMetadataStore(MetadataStore):
         If name is provided, the single instance will be returned in a list of one item.
         """
         if not self.schemaspace_exists():  # schemaspace doesn't exist - return empty list
+            if name:  # If we're looking for a specific instance and there's no schemaspace, raise MetadataNotFound
+                raise MetadataNotFoundError(self.schemaspace, name)
             return []
 
         resources = {}
@@ -262,7 +267,7 @@ class FileMetadataStore(MetadataStore):
         # Write out the instance
         try:
             with jupyter_core.paths.secure_write(resource) as f:
-                f.write(json.dumps(metadata, indent=2))  # Only persist necessary items
+                json.dump(metadata, f, indent=2)  # Only persist necessary items
         except Exception as ex:
             self._rollback(resource, renamed_resource)
             raise ex from ex

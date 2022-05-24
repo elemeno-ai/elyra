@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
 # limitations under the License.
 #
 from datetime import datetime
-import logging
 import os
 import re
 import tempfile
@@ -22,17 +21,13 @@ import time
 from typing import Dict
 from urllib.parse import urlsplit
 
-import autopep8
-from jinja2 import Environment
-from jinja2 import PackageLoader
-from jupyter_core.paths import ENV_JUPYTER_PATH
 from kfp import Client as ArgoClient
 from kfp import compiler as kfp_argo_compiler
 from kfp import components as components
 from kfp.dsl import PipelineConf
 from kfp.aws import use_aws_secret  # noqa H306
 from kubernetes import client as k8s_client
-import requests
+
 try:
     from kfp_tekton import compiler as kfp_tekton_compiler
     from kfp_tekton import TektonClient
@@ -45,18 +40,22 @@ from elyra._version import __version__
 from elyra.kfp.operator import ExecuteFileOp
 from elyra.metadata.schemaspaces import RuntimeImages
 from elyra.metadata.schemaspaces import Runtimes
-from elyra.pipeline.kfp.component_parser_kfp import KfpComponentParser
+from elyra.pipeline.component_catalog import ComponentCache
+from elyra.pipeline.kfp.kfp_authentication import AuthenticationError
+from elyra.pipeline.kfp.kfp_authentication import KFPAuthenticator
 from elyra.pipeline.pipeline import GenericOperation
 from elyra.pipeline.pipeline import Operation
 from elyra.pipeline.processor import PipelineProcessor
 from elyra.pipeline.processor import PipelineProcessorResponse
 from elyra.pipeline.processor import RuntimePipelineProcessor
+from elyra.pipeline.runtime_type import RuntimeProcessorType
 from elyra.util.path import get_absolute_path
 import kfp.gcp as gcp
 
 
 class KfpPipelineProcessor(RuntimePipelineProcessor):
-    _type = 'kfp'
+    _type = RuntimeProcessorType.KUBEFLOW_PIPELINES
+    _name = 'kfp'
 
     # Provide users with the ability to identify a writable directory in the
     # running container where the notebook | script is executed. The location
@@ -64,12 +63,8 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
     # Defaults to `/tmp`
     WCD = os.getenv('ELYRA_WRITABLE_CONTAINER_DIR', '/tmp').strip().rstrip('/')
 
-    @property
-    def type(self):
-        return self._type
-
     def __init__(self, root_dir, **kwargs):
-        super().__init__(root_dir, component_parser=KfpComponentParser(), **kwargs)
+        super().__init__(root_dir, **kwargs)
 
     def process(self, pipeline):
         """
@@ -104,37 +99,41 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
         cos_endpoint = runtime_configuration.metadata['cos_endpoint']
         cos_bucket = runtime_configuration.metadata['cos_bucket']
 
-        ################
-        # Istio Auth Session
-        ################
-        try:
-            auth_session = self._get_istio_auth_session(
-                url=api_endpoint,
-                username=api_username,
-                password=api_password
-            )
-        except Exception as ex:
-            raise RuntimeError(
-                f"Failed to create istio auth session for Kubeflow endpoint: '{api_endpoint}' - "
-                f"Check Kubeflow Pipelines runtime configuration: '{pipeline.runtime_config}'"
-            ) from ex
+        # Determine which provider to use to authenticate with Kubeflow
+        auth_type = runtime_configuration.metadata.get('auth_type')
 
-        self.log.debug(f"Kubeflow istio `auth_session` dict: {auth_session}")
+        try:
+            auth_info = \
+                KFPAuthenticator().authenticate(api_endpoint,
+                                                auth_type_str=auth_type,
+                                                runtime_config_name=pipeline.runtime_config,
+                                                auth_parm_1=api_username,
+                                                auth_parm_2=api_password)
+            self.log.debug(f'Authenticator returned {auth_info}')
+        except AuthenticationError as ae:
+            if ae.get_request_history() is not None:
+                self.log.info('An authentication error was raised. Diagnostic information follows.')
+                self.log.info(ae.request_history_to_string())
+            raise RuntimeError(f'Kubeflow authentication failed: {ae}')
 
         #############
-        # Kubeflow Client
+        # Create Kubeflow Client
         #############
         try:
             if engine == "Tekton":
                 client = TektonClient(
                     host=api_endpoint,
-                    cookies=auth_session['session_cookie'],
+                    cookies=auth_info.get('cookies', None),
+                    credentials=auth_info.get('credentials', None),
+                    existing_token=auth_info.get('existing_token', None),
                     namespace=user_namespace
                 )
             else:
                 client = ArgoClient(
                     host=api_endpoint,
-                    cookies=auth_session['session_cookie'],
+                    cookies=auth_info.get('cookies', None),
+                    credentials=auth_info.get('credentials', None),
+                    existing_token=auth_info.get('existing_token', None),
                     namespace=user_namespace
                 )
         except Exception as ex:
@@ -247,6 +246,8 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
                         pipeline_path,
                         pipeline_conf=pipeline_conf
                     )
+            except RuntimeError:
+                raise
             except Exception as ex:
                 raise RuntimeError(
                     f"Failed to compile pipeline '{pipeline_name}' with engine '{engine}' to: '{pipeline_path}'"
@@ -348,6 +349,14 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
                     f"Check Kubeflow Pipelines runtime configuration: '{pipeline.runtime_config}'"
                 ) from ex
 
+            if run is None:
+                # client.run_pipeline seemed to have encountered an issue
+                # but didn't raise an exception
+                raise RuntimeError(
+                    f"Failed to create Kubeflow pipeline run: '{job_name}' - "
+                    f"Check Kubeflow Pipelines runtime configuration: '{pipeline.runtime_config}'"
+                )
+
             self.log_pipeline_info(
                 pipeline_name,
                 f"pipeline submitted: {api_endpoint}/#/runs/details/{run.id}",
@@ -355,24 +364,19 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
             )
 
         return KfpPipelineProcessorResponse(
+            run_id=run.id,
             run_url=f"{api_endpoint}/#/runs/details/{run.id}",
             object_storage_url=f"{cos_endpoint}",
             object_storage_path=f"/{cos_bucket}/{cos_directory}",
         )
 
     def export(self, pipeline, pipeline_export_format, pipeline_export_path, overwrite):
-        if pipeline_export_format not in ["yaml", "py"]:
-            raise ValueError("Pipeline export format {} not recognized.".format(pipeline_export_format))
+        # Verify that the KfpPipelineProcessor supports the given export format
+        self._verify_export_format(pipeline_export_format)
 
         t0_all = time.time()
         timestamp = datetime.now().strftime("%m%d%H%M%S")
         pipeline_name = pipeline.name
-        pipeline_description = pipeline.description
-        pipeline_version_name = f'{pipeline_name}-{timestamp}'
-        # work around https://github.com/kubeflow/pipelines/issues/5172
-        experiment_name = pipeline_name.lower()
-        # Unique identifier for the pipeline run
-        job_name = f'{pipeline_name}-{timestamp}'
         # Unique location on COS where the pipeline run artifacts
         # will be stored
         cos_directory = f'{pipeline_name}-{timestamp}'
@@ -383,96 +387,36 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
 
         runtime_configuration = self._get_metadata_configuration(schemaspace=Runtimes.RUNTIMES_SCHEMASPACE_ID,
                                                                  name=pipeline.runtime_config)
-        api_endpoint = runtime_configuration.metadata['api_endpoint'].rstrip('/')
-        namespace = runtime_configuration.metadata.get('user_namespace')
-        engine = runtime_configuration.metadata.get('engine')
-        cos_secret = runtime_configuration.metadata.get('cos_secret')
-        kf_secured = runtime_configuration.metadata.get('api_username') is not None and \
-            runtime_configuration.metadata.get('api_password') is not None
 
+        engine = runtime_configuration.metadata.get('engine')
         if engine == 'Tekton' and not TektonClient:
             raise ValueError('kfp-tekton not installed. Please install using elyra[kfp-tekton] to use Tekton engine.')
 
         if os.path.exists(absolute_pipeline_export_path) and not overwrite:
             raise ValueError("File " + absolute_pipeline_export_path + " already exists.")
 
-        self.log_pipeline_info(pipeline_name, f"exporting pipeline as a .{pipeline_export_format} file")
-        if pipeline_export_format != "py":
-            # Export pipeline as static configuration file (YAML formatted)
-            try:
-                # Exported pipeline is not associated with an experiment
-                # or a version. The association is established when the
-                # pipeline is imported into KFP by the user.
-                pipeline_function = lambda: self._cc_pipeline(pipeline,
-                                                              pipeline_name,
-                                                              cos_directory=cos_directory)  # nopep8
-                if engine == 'Tekton':
-                    self.log.info("Compiling pipeline for Tekton engine")
-                    kfp_tekton_compiler.TektonCompiler().compile(pipeline_function, absolute_pipeline_export_path)
-                else:
-                    self.log.info("Compiling pipeline for Argo engine")
-                    kfp_argo_compiler.Compiler().compile(pipeline_function, absolute_pipeline_export_path)
-            except Exception as ex:
-                if ex.__cause__:
-                    raise RuntimeError(str(ex)) from ex
-                raise RuntimeError('Error pre-processing pipeline {} for export at {}'.
-                                   format(pipeline_name, absolute_pipeline_export_path), str(ex)) from ex
-        else:
-            # Export pipeline as Python DSL
-            # Load template from installed elyra package
-
-            loader = PackageLoader('elyra', 'templates/kfp')
-            template_env = Environment(loader=loader, trim_blocks=True)
-
-            template_env.filters['to_basename'] = lambda path: os.path.basename(path)
-
-            template = template_env.get_template('kfp_template.jinja2')
-
-            defined_pipeline = self._cc_pipeline(pipeline,
-                                                 pipeline_name,
-                                                 pipeline_version=pipeline_version_name,
-                                                 experiment_name=experiment_name,
-                                                 cos_directory=cos_directory,
-                                                 export=True)
-
-            if pipeline_description is None:
-                pipeline_description = f"Created with Elyra {__version__} pipeline editor using `{pipeline.source}`."
-
-            if self.log.isEnabledFor(logging.DEBUG):
-                self.log.debug(f"Exporting pipeline {pipeline_name} with components: \n")
-                for key, operation in defined_pipeline.items():
-                    self.log.debug("component:\n "
-                                   f"operation name : {operation.name} \n "
-                                   f"inputs : {operation.inputs} \n "
-                                   f"outputs : {operation.outputs} \n ")
-
-            # The exported pipeline is by default associated with
-            # an experiment.
-            # The user can manually customize the generated code
-            # and change the associations as desired.
-
-            python_output = template.render(operations_list=defined_pipeline,
-                                            pipeline_name=pipeline_name,
-                                            pipeline_version=pipeline_version_name,
-                                            experiment_name=experiment_name,
-                                            run_name=job_name,
-                                            engine=engine,
-                                            cos_secret=cos_secret,
-                                            namespace=namespace,
-                                            api_endpoint=api_endpoint,
-                                            pipeline_description=pipeline_description,
-                                            writable_container_dir=self.WCD,
-                                            kf_secured=kf_secured)
-
-            # Write to Python file and fix formatting
-            with open(absolute_pipeline_export_path, "w") as fh:
-                # Defer the import to postpone logger messages: https://github.com/psf/black/issues/2058
-                import black
-                autopep_output = autopep8.fix_code(python_output)
-                output_to_file = black.format_str(autopep_output, mode=black.FileMode())
-                fh.write(output_to_file)
-
-            self.log_pipeline_info(pipeline_name, "pipeline rendered", duration=(time.time() - t0_all))
+        self.log_pipeline_info(pipeline_name, f"Exporting pipeline as a .{pipeline_export_format} file")
+        # Export pipeline as static configuration file (YAML formatted)
+        try:
+            # Exported pipeline is not associated with an experiment
+            # or a version. The association is established when the
+            # pipeline is imported into KFP by the user.
+            pipeline_function = lambda: self._cc_pipeline(pipeline,
+                                                          pipeline_name,
+                                                          cos_directory=cos_directory)  # nopep8
+            if engine == 'Tekton':
+                self.log.info("Compiling pipeline for Tekton engine")
+                kfp_tekton_compiler.TektonCompiler().compile(pipeline_function, absolute_pipeline_export_path)
+            else:
+                self.log.info("Compiling pipeline for Argo engine")
+                kfp_argo_compiler.Compiler().compile(pipeline_function, absolute_pipeline_export_path)
+        except RuntimeError:
+            raise
+        except Exception as ex:
+            if ex.__cause__:
+                raise RuntimeError(str(ex)) from ex
+            raise RuntimeError('Error pre-processing pipeline {} for export at {}'.
+                               format(pipeline_name, absolute_pipeline_export_path), str(ex)) from ex
 
         self.log_pipeline_info(pipeline_name,
                                f"pipeline exported: {pipeline_export_path}",
@@ -503,14 +447,14 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
                                                                  name=pipeline.runtime_config)
 
         cos_endpoint = runtime_configuration.metadata['cos_endpoint']
-        cos_username = runtime_configuration.metadata['cos_username']
-        cos_password = runtime_configuration.metadata['cos_password']
+        cos_username = runtime_configuration.metadata.get('cos_username')
+        cos_password = runtime_configuration.metadata.get('cos_password')
         cos_secret = runtime_configuration.metadata.get('cos_secret')
-        engine = runtime_configuration.metadata['engine']
-
+        cos_bucket = runtime_configuration.metadata.get('cos_bucket')
         if cos_directory is None:
             cos_directory = pipeline_name
-        cos_bucket = runtime_configuration.metadata['cos_bucket']
+
+        engine = runtime_configuration.metadata['engine']
 
         self.log_pipeline_info(pipeline_name,
                                f"processing pipeline dependencies to: {cos_endpoint} "
@@ -525,6 +469,12 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
 
         # Sort operations based on dependency graph (topological order)
         sorted_operations = PipelineProcessor._sort_operations(pipeline.operations)
+
+        # Determine whether access to cloud storage is required
+        for operation in sorted_operations:
+            if isinstance(operation, GenericOperation):
+                self._verify_cos_connectivity(runtime_configuration)
+                break
 
         # All previous operation outputs should be propagated throughout the pipeline.
         # In order to process this recursively, the current operation's inputs should be combined
@@ -586,6 +536,9 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
 
                 ## FIX right now were adding the gcp sa secret to all operations by default, should control it with some sort of flag
                 target_ops[operation.id].apply(gcp.use_gcp_secret('kfp-gcp-bq-account'))
+                if operation.doc:
+                    target_ops[operation.id].add_pod_annotation('elyra/node-user-doc', operation.doc)
+
                 # TODO Can we move all of this to apply to non-standard components as well? Test when servers are up
                 if cos_secret and not export:
                     target_ops[operation.id].apply(use_aws_secret(cos_secret))
@@ -608,7 +561,7 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
             # If operation is a "non-standard" component, load it's spec and create operation with factory function
             else:
                 # Retrieve component from cache
-                component = self._component_registry.get_component(operation.classifier)
+                component = ComponentCache.instance().get_component(self._type, operation.classifier)
 
                 # Convert the user-entered value of certain properties according to their type
                 for component_property in component.properties:
@@ -623,23 +576,32 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
                         output_node_parameter_key = property_value['option'].replace("elyra_output_", "")
                         operation.component_params[component_property.ref] = \
                             target_ops[output_node_id].outputs[output_node_parameter_key]
-                    elif component_property.data_type == 'dictionary':
-                        processed_value = self._process_dictionary_value(property_value)
-                        operation.component_params[component_property.ref] = processed_value
-                    elif component_property.data_type == 'list':
-                        processed_value = self._process_list_value(property_value)
-                        operation.component_params[component_property.ref] = processed_value
+                    elif component_property.data_type == "inputvalue":
+                        active_property = property_value['activeControl']
+                        active_property_value = property_value.get(active_property, None)
 
-                # Get absolute path to the location of the component definition
-                component_path = component.location
-                if component.location_type == "filename":
-                    component_path = os.path.join(ENV_JUPYTER_PATH[0], 'components', component_path)
+                        # If the value is not found, assign it the default value assigned in parser
+                        if active_property_value is None:
+                            active_property_value = component_property.value
 
-                component_source = {component.location_type: component_path}
+                        if isinstance(active_property_value, dict) and \
+                                set(active_property_value.keys()) == {'value', 'option'}:
+                            output_node_id = active_property_value['value']
+                            output_node_parameter_key = active_property_value['option'].replace("elyra_output_", "")
+                            operation.component_params[component_property.ref] = \
+                                target_ops[output_node_id].outputs[output_node_parameter_key]
+                        elif component_property.default_data_type == 'dictionary':
+                            processed_value = self._process_dictionary_value(active_property_value)
+                            operation.component_params[component_property.ref] = processed_value
+                        elif component_property.default_data_type == 'list':
+                            processed_value = self._process_list_value(active_property_value)
+                            operation.component_params[component_property.ref] = processed_value
+                        else:
+                            operation.component_params[component_property.ref] = active_property_value
 
                 # Build component task factory
                 try:
-                    factory_function = components.load_component(**component_source)
+                    factory_function = components.load_component_from_text(component.definition)
                 except Exception as e:
                     # TODO Fix error messaging and break exceptions down into categories
                     self.log.error(f"Error loading component spec for {operation.name}: {str(e)}")
@@ -661,8 +623,15 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
                         operation.component_params_as_dict.pop(parameter, None)
 
                     # Create ContainerOp instance and assign appropriate user-provided name
-                    container_op = factory_function(**operation.component_params_as_dict)
+                    sanitized_component_params = {
+                        self._sanitize_param_name(name): value
+                        for name, value in operation.component_params_as_dict.items()
+                    }
+                    container_op = factory_function(**sanitized_component_params)
                     container_op.set_display_name(operation.name)
+
+                    if operation.doc:
+                        container_op.add_pod_annotation("elyra/node-user-doc", operation.doc)
 
                     target_ops[operation.id] = container_op
                 except Exception as e:
@@ -732,102 +701,38 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
         return re.sub('-+', '-', re.sub('[^-_0-9A-Za-z ]+', '-', name)).lstrip('-').rstrip('-')
 
     @staticmethod
-    def _get_istio_auth_session(url: str, username: str, password: str) -> dict:
+    def _sanitize_param_name(name: str) -> str:
         """
-        Determine if the specified URL is secured by Dex and try to obtain a session cookie.
-        WARNING: only Dex `staticPasswords` and `LDAP` authentication are currently supported
-                 (we default default to using `staticPasswords` if both are enabled)
+        Sanitize a component parameter name.
 
-        :param url: Kubeflow server URL, including protocol
-        :param username: Dex `staticPasswords` or `LDAP` username
-        :param password: Dex `staticPasswords` or `LDAP` password
-        :return: auth session information
+        Behavior is mirrored from how Kubeflow 1.X sanitizes identifier names:
+        - https://github.com/kubeflow/pipelines/blob/1.8.1/sdk/python/kfp/components/_naming.py#L32-L42
+        - https://github.com/kubeflow/pipelines/blob/1.8.1/sdk/python/kfp/components/_naming.py#L49-L50
         """
-        # define the default return object
-        auth_session = {
-            "endpoint_url": url,    # KF endpoint URL
-            "redirect_url": None,   # KF redirect URL, if applicable
-            "dex_login_url": None,  # Dex login URL (for POST of credentials)
-            "is_secured": None,     # True if KF endpoint is secured
-            "session_cookie": None  # Resulting session cookies in the form "key1=value1; key2=value2"
-        }
+        normalized_name = name.lower()
 
-        # use a persistent session (for cookies)
-        with requests.Session() as s:
+        # remove non-word characters
+        normalized_name = re.sub(r'[\W_]', ' ', normalized_name)
 
-            ################
-            # Determine if Endpoint is Secured
-            ################
-            resp = s.get(url, allow_redirects=True)
-            if resp.status_code != 200:
-                raise RuntimeError(
-                    f"HTTP status code '{resp.status_code}' for GET against: {url}"
-                )
+        # no double spaces, leading or trailing spaces
+        normalized_name = re.sub(' +', ' ', normalized_name).strip()
 
-            auth_session["redirect_url"] = resp.url
+        # no leading digits
+        if re.match(r'\d', normalized_name):
+            normalized_name = 'n' + normalized_name
 
-            # if we were NOT redirected, then the endpoint is UNSECURED
-            if len(resp.history) == 0:
-                auth_session["is_secured"] = False
-                return auth_session
-            else:
-                auth_session["is_secured"] = True
-
-            ################
-            # Get Dex Login URL
-            ################
-            redirect_url_obj = urlsplit(auth_session["redirect_url"])
-
-            # if we are at `/auth?=xxxx` path, we need to select an auth type
-            if re.search(r"/auth$", redirect_url_obj.path):
-                # default to "staticPasswords" auth type
-                redirect_url_obj = redirect_url_obj._replace(
-                    path=re.sub(r"/auth$", "/auth/local", redirect_url_obj.path)
-                )
-
-            # if we are at `/auth/xxxx/login` path, then no further action is needed (we can use it for login POST)
-            if re.search(r"/auth/.*/login$", redirect_url_obj.path):
-                auth_session["dex_login_url"] = redirect_url_obj.geturl()
-
-            # else, we need to be redirected to the actual login page
-            else:
-                # this GET should redirect us to the `/auth/xxxx/login` path
-                resp = s.get(redirect_url_obj.geturl(), allow_redirects=True)
-                if resp.status_code != 200:
-                    raise RuntimeError(
-                        f"HTTP status code '{resp.status_code}' for GET against: {redirect_url_obj.geturl()}"
-                    )
-
-                # set the login url
-                auth_session["dex_login_url"] = resp.url
-
-            ################
-            # Attempt Dex Login
-            ################
-            resp = s.post(
-                auth_session["dex_login_url"],
-                data={"login": username, "password": password},
-                allow_redirects=True
-            )
-            if len(resp.history) == 0:
-                raise RuntimeError(
-                    f"Login credentials were probably invalid - "
-                    f"No redirect after POST to: {auth_session['dex_login_url']}"
-                )
-
-            # store the session cookies in a "key1=value1; key2=value2" string
-            auth_session["session_cookie"] = "; ".join([f"{c.name}={c.value}" for c in s.cookies])
-
-        return auth_session
+        return normalized_name.replace(' ', '_')
 
 
 class KfpPipelineProcessorResponse(PipelineProcessorResponse):
+    _type = RuntimeProcessorType.KUBEFLOW_PIPELINES
+    _name = 'kfp'
 
-    _type = 'kfp'
-
-    def __init__(self, run_url, object_storage_url, object_storage_path):
+    def __init__(self, run_id, run_url, object_storage_url, object_storage_path):
         super().__init__(run_url, object_storage_url, object_storage_path)
+        self.run_id = run_id
 
-    @property
-    def type(self):
-        return self._type
+    def to_json(self):
+        response = super().to_json()
+        response['run_id'] = self.run_id
+        return response

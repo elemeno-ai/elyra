@@ -1,6 +1,6 @@
 <!--
 {% comment %}
-Copyright 2018-2021 Elyra Authors
+Copyright 2018-2022 Elyra Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ In this example we will show how to launch Elyra using [Kubeflow's Notebook Serv
   
   OR
 
-  Create a custom Elyra container image following the [instructions in this directory](https://github.com/elyra-ai/elyra/tree/3.2.2/etc/docker/kubeflow). 
+  Create a custom Elyra container image following the [instructions in this directory](https://github.com/elyra-ai/elyra/tree/3.7.0/etc/docker/kubeflow). 
     
 ## Launching Elyra in the Kubeflow Notebook Server
 1. In the default Kubeflow welcome page, in the left side menu, click on `Notebook Servers`   

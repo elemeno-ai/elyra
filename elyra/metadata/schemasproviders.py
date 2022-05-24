@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ from typing import Dict
 from typing import List
 
 import entrypoints
+from traitlets import log  # noqa H306
 try:
     from kfp_tekton import TektonClient
 except ImportError:
@@ -28,12 +29,29 @@ except ImportError:
     TektonClient = None
 
 from elyra.metadata.schema import SchemasProvider
+from elyra.metadata.schemaspaces import CodeSnippets
+from elyra.metadata.schemaspaces import ComponentCatalogs
+from elyra.metadata.schemaspaces import RuntimeImages
+from elyra.metadata.schemaspaces import Runtimes
+from elyra.pipeline.kfp.kfp_authentication import SupportedAuthProviders
+from elyra.util.gitutil import SupportedGitTypes
 
 
 class ElyraSchemasProvider(SchemasProvider, metaclass=ABCMeta):
     """Base class used for retrieving Elyra-based schema files from its metadata/schemas directory."""
 
+    # Just read the schema files once.  Note that this list will also include the meta-schema.json.
+    local_schemas = []
+    schema_dir = os.path.join(os.path.dirname(__file__), 'schemas')
+    schema_files = [json_file for json_file in os.listdir(schema_dir) if json_file.endswith('.json')]
+    for json_file in schema_files:
+        schema_file = os.path.join(schema_dir, json_file)
+        with io.open(schema_file, 'r', encoding='utf-8') as f:
+            schema_json = json.load(f)
+            local_schemas.append(schema_json)
+
     def __init__(self):
+        self.log = log.get_logger()
         # get set of registered runtimes
         self._runtime_processor_names = set()
         for processor in entrypoints.get_group_all('elyra.pipeline.processors'):
@@ -42,37 +60,37 @@ class ElyraSchemasProvider(SchemasProvider, metaclass=ABCMeta):
                 continue
             self._runtime_processor_names.add(processor.name)
 
-    def get_schemas_by_name(self, schema_names: List[str]) -> List[Dict]:
+    def get_local_schemas_by_schemaspace(self, schemaspace_id: str) -> List[Dict]:
+        """Returns a list of local schemas associated with the given schemaspace_id """
         schemas = []
-        schema_dir = os.path.join(os.path.dirname(__file__), 'schemas')
-        schema_files = [json_file for json_file in os.listdir(schema_dir) if json_file.endswith('.json')]
-        for json_file in schema_files:
-            basename = os.path.splitext(json_file)[0]
-            if basename in schema_names:
-                schema_file = os.path.join(schema_dir, json_file)
-                with io.open(schema_file, 'r', encoding='utf-8') as f:
-                    schema_json = json.load(f)
-                    schemas.append(schema_json)
+        for schema in ElyraSchemasProvider.local_schemas:
+            if schema.get('schemaspace_id') == schemaspace_id:
+                schemas.append(schema)
         return schemas
 
 
 class RuntimesSchemas(ElyraSchemasProvider):
     """Returns schemas relative to Runtimes schemaspace only for THIS provider."""
 
-    elyra_processors = ['airflow', 'kfp']
-
     def get_schemas(self) -> List[Dict]:
-        schemas = []
-        kfp_needed = False
-        # determine if both airflow and kfp are needed and note if kfp is needed for later
-        for elyra_processor in self.elyra_processors:
-            if elyra_processor in self._runtime_processor_names:
-                schemas.append(elyra_processor)
-                if elyra_processor == 'kfp':
-                    kfp_needed = True
 
-        runtime_schemas = self.get_schemas_by_name(schemas)
-        if kfp_needed:  # Update the kfp engine enum to reflect current packages...
+        kfp_schema_present = False
+        airflow_schema_present = False
+        # determine if both airflow and kfp are needed and note if kfp is needed for later
+        runtime_schemas = []
+        schemas = self.get_local_schemas_by_schemaspace(Runtimes.RUNTIMES_SCHEMASPACE_ID)
+        for schema in schemas:
+            if schema['name'] in self._runtime_processor_names:
+                runtime_schemas.append(schema)
+                if schema['name'] == 'kfp':
+                    kfp_schema_present = True
+                elif schema['name'] == 'airflow':
+                    airflow_schema_present = True
+            else:
+                self.log.error(f"No entrypoint with name '{schema['name']}' was found in group "
+                               f"'elyra.pipeline.processor' to match the schema with the same name. Skipping...")
+
+        if kfp_schema_present:  # Update the kfp engine enum to reflect current packages...
             # If TektonClient package is missing, navigate to the engine property
             # and remove 'tekton' entry if present and return updated result.
             if not TektonClient:
@@ -83,28 +101,46 @@ class RuntimesSchemas(ElyraSchemasProvider):
                         if 'Tekton' in engine_enum:
                             engine_enum.remove('Tekton')
                             schema['properties']['metadata']['properties']['engine']['enum'] = engine_enum
+
+            # For KFP schemas replace placeholders:
+            # - properties.metadata.properties.auth_type.enum ({AUTH_PROVIDER_PLACEHOLDERS})
+            # - properties.metadata.properties.auth_type.default ({DEFAULT_AUTH_PROVIDER_PLACEHOLDER})
+            auth_type_enum = SupportedAuthProviders.get_provider_names()
+            auth_type_default = SupportedAuthProviders.get_default_provider().name
+
+            for schema in runtime_schemas:
+                if schema['name'] == 'kfp':
+                    if schema['properties']['metadata']['properties'].get('auth_type') is not None:
+                        schema['properties']['metadata']['properties']['auth_type']['enum'] = auth_type_enum
+                        schema['properties']['metadata']['properties']['auth_type']['default'] = auth_type_default
+
+        if airflow_schema_present:
+            # Replace Git Type placeholders
+            git_type_enum = list(map(lambda c: c.name, SupportedGitTypes.get_enabled_types()))
+            git_type_default = SupportedGitTypes.get_default_type().name
+            for schema in runtime_schemas:
+                if schema['name'] == 'airflow':
+                    if schema['properties']['metadata']['properties'].get('git_type') is not None:
+                        schema['properties']['metadata']['properties']['git_type']['enum'] = git_type_enum
+                        schema['properties']['metadata']['properties']['git_type']['default'] = git_type_default
+
         return runtime_schemas
 
 
 class RuntimeImagesSchemas(ElyraSchemasProvider):
     """Returns schemas relative to Runtime Images schemaspace."""
     def get_schemas(self) -> List[Dict]:
-        return self.get_schemas_by_name(['runtime-image'])
+        return self.get_local_schemas_by_schemaspace(RuntimeImages.RUNTIME_IMAGES_SCHEMASPACE_ID)
 
 
 class CodeSnippetsSchemas(ElyraSchemasProvider):
     """Returns schemas relative to Code Snippets schemaspace."""
     def get_schemas(self) -> List[Dict]:
-        return self.get_schemas_by_name(['code-snippet'])
+        return self.get_local_schemas_by_schemaspace(CodeSnippets.CODE_SNIPPETS_SCHEMASPACE_ID)
 
 
-class ComponentRegistriesSchemas(ElyraSchemasProvider):
-    """Returns schemas relative to Component Registries schemaspace."""
+class ComponentCatalogsSchemas(ElyraSchemasProvider):
+    """Returns schemas relative to Component Catalogs schemaspace."""
     def get_schemas(self) -> List[Dict]:
-        schemas = self.get_schemas_by_name(['component-registry'])
-
-        # Update runtime enum with set of currently registered runtimes
-        for schema in schemas:
-            schema['properties']['metadata']['properties']['runtime']['enum'] = list(self._runtime_processor_names)
-
+        schemas = self.get_local_schemas_by_schemaspace(ComponentCatalogs.COMPONENT_CATALOGS_SCHEMASPACE_ID)
         return schemas

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2021 Elyra Authors
+ * Copyright 2018-2022 Elyra Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -169,13 +169,15 @@ export class RequestHandler {
    */
   static async makeServerRequest<T = any>(
     requestPath: string,
-    requestInit: any,
+    options: RequestInit & { type?: 'blob' | 'json' | 'text' },
     longRequestDialog?: Dialog<any>
   ): Promise<T> {
     // use ServerConnection utility to make calls to Jupyter Based services
     // which in this case are in the extension installed by this package
     const settings = ServerConnection.makeSettings();
     const requestUrl = URLExt.join(settings.baseUrl, requestPath);
+
+    const { type = 'json', ...requestInit } = options;
 
     console.log(`Sending a ${requestInit.method} request to ${requestUrl}`);
 
@@ -190,7 +192,7 @@ export class RequestHandler {
             longRequestDialog.resolve();
           }
 
-          response.json().then(
+          response[type]().then(
             // handle cases where the server returns a valid response
             (result: any) => {
               if (response.status < 200 || response.status >= 300) {
@@ -201,10 +203,10 @@ export class RequestHandler {
             },
             // handle 404 if the server is not found
             (reason: any) => {
-              if (response.status == 404) {
+              if (response.status === 404 || response.status === 409) {
                 response['requestPath'] = requestPath;
                 return reject(response);
-              } else if (response.status == 204) {
+              } else if (response.status === 204) {
                 resolve({});
               } else {
                 return reject(reason);

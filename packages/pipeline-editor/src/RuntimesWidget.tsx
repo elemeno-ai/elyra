@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2021 Elyra Authors
+ * Copyright 2018-2022 Elyra Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,6 +51,8 @@ export interface IRuntimesDisplayProps extends IMetadataDisplayProps {
   sortMetadata: boolean;
   className: string;
   schemas?: IDictionary<any>[];
+  titleContext?: string;
+  appendToTitle?: boolean;
 }
 
 /**
@@ -125,7 +127,7 @@ export class RuntimesWidget extends MetadataWidget {
   }
 
   async fetchMetadata(): Promise<any> {
-    return await PipelineService.getRuntimes(false).catch(error =>
+    return await PipelineService.getRuntimes().catch(error =>
       RequestErrors.serverError(error)
     );
   }
@@ -142,6 +144,15 @@ export class RuntimesWidget extends MetadataWidget {
     return 'runtime configuration';
   };
 
+  addMetadata(schema: string, titleContext?: string): void {
+    this.openMetadataEditor({
+      onSave: this.updateMetadata,
+      schemaspace: this.props.schemaspace,
+      schema: schema,
+      titleContext: titleContext
+    });
+  }
+
   renderDisplay(metadata: IMetadata[]): React.ReactElement {
     if (Array.isArray(metadata) && !metadata.length) {
       // Empty metadata
@@ -149,7 +160,7 @@ export class RuntimesWidget extends MetadataWidget {
         <div>
           <br />
           <h6 className="elyra-no-metadata-msg">
-            Click the + button to add a new Runtime
+            Click the + button to add {this.props.display_name.toLowerCase()}
           </h6>
         </div>
       );
@@ -165,6 +176,8 @@ export class RuntimesWidget extends MetadataWidget {
         schemas={this.schemas}
         className={RUNTIMES_METADATA_CLASS}
         labelName={this.getSchemaTitle}
+        titleContext={this.props.titleContext}
+        appendToTitle={this.props.appendToTitle}
       />
     );
   }

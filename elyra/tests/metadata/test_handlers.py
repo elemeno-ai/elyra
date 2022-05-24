@@ -1,5 +1,5 @@
 #
-# Copyright 2018-2021 Elyra Authors
+# Copyright 2018-2022 Elyra Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ import json
 import os
 import shutil
 
-from jupyter_server.tests.utils import expected_http_error
 from jupyter_server.utils import url_path_join
 import pytest
 from tornado.httpclient import HTTPClientError
@@ -30,6 +29,7 @@ from elyra.tests.metadata.test_utils import create_json_file
 from elyra.tests.metadata.test_utils import get_instance
 from elyra.tests.metadata.test_utils import invalid_metadata_json
 from elyra.tests.metadata.test_utils import valid_metadata_json
+from elyra.tests.util.handlers_utils import expected_http_error
 
 os.environ["METADATA_TESTING"] = "1"  # Enable metadata-tests schemaspace
 
@@ -135,7 +135,7 @@ async def test_create_instance(jp_base_url, jp_fetch):
                                                       METADATA_TEST_SCHEMASPACE_ID, 'valid')
     metadata = json.loads(r.body.decode())
     # Add expected "extra" fields to 'valid' so whole-object comparison is satisfied.
-    # These are added during the pre_save(), post_save() and post_load() hooks on the
+    # These are added during the pre_save(), post_save() and on_load() hooks on the
     # MockMetadataTest class instance or when default values for missing properties are applied.
     valid['pre_property'] = valid['metadata']['required_test']
     valid['post_property'] = valid['display_name']

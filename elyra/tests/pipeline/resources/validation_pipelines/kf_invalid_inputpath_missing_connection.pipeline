@@ -11,11 +11,14 @@
         {
           "id": "65ef3a01-569a-4ea4-bd3d-842ca6ce47ac",
           "type": "execution_node",
-          "op": "filter_text_using_shell_and_grep_Filtertext",
+          "op": "elyra-kfp-examples-catalog:737915b826e9",
           "app_data": {
             "component_parameters": {
               "component_description": "Filter input text according to the given regex pattern using shell and grep.",
-              "pattern": ".*",
+              "pattern": {
+                "activeControl": "StringControl",
+                "StringControl": ".*"
+              },
               "output_filtered_text": "",
               "text": {
                 "value": "4ca98ef2-2e1a-4266-a6e7-6a1a42ec471a",
@@ -71,12 +74,18 @@
         {
           "id": "4ca98ef2-2e1a-4266-a6e7-6a1a42ec471a",
           "type": "execution_node",
-          "op": "component_Downloaddata",
+          "op": "elyra-kfp-examples-catalog:a08014f9252f",
           "app_data": {
             "component_parameters": {
-              "curl_options": "--location",
+              "curl_options": {
+                "activeControl": "StringControl",
+                "StringControl": "--location"
+              },
               "output_data": "",
-              "url": "https://raw.githubusercontent.com/elyra-ai/examples/master/pipelines/kubeflow_pipelines_component_examples/filter_file_component/data.csv"
+              "url": {
+                "activeControl": "StringControl",
+                "StringControl": "https://raw.githubusercontent.com/elyra-ai/examples/master/pipelines/kubeflow_pipelines_component_examples/filter_file_component/data.csv"
+              }
             },
             "label": "",
             "component_source": "https://raw.githubusercontent.com/kubeflow/pipelines/1.6.0/components/web/Download/component.yaml",
@@ -119,10 +128,13 @@
         {
           "id": "5b78ea0a-e5fc-4022-94d4-7b9dc170d794",
           "type": "execution_node",
-          "op": "component_Calculatedatahash",
+          "op": "elyra-kfp-examples-catalog:d68ec7fcdf46",
           "app_data": {
             "component_parameters": {
-              "hash_algorithm": "SHA256",
+              "hash_algorithm": {
+                "activeControl": "StringControl",
+                "StringControl": "SHA256"
+              },
               "output_hash": "",
               "data": {
                 "value": "4ca98ef2-2e1a-4266-a6e7-6a1a42ec471a",
@@ -172,11 +184,10 @@
         "ui_data": {
           "comments": []
         },
-        "version": 5,
-        "runtime": "kfp",
+        "version": 7,
+        "runtime_type": "KUBEFLOW_PIPELINES",
         "properties": {
-          "name": "kf_invalid_inputpath_missing_connection",
-          "runtime": "Kubeflow Pipelines"
+          "name": "kf_invalid_inputpath_missing_connection"
         }
       },
       "runtime_ref": ""
