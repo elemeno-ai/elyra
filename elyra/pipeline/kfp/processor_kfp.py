@@ -481,8 +481,6 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
         cos_secret = runtime_configuration.metadata.get("cos_secret")
         cos_bucket = runtime_configuration.metadata.get("cos_bucket")
         engine = runtime_configuration.metadata["engine"]
-        if cos_directory is None:
-            cos_directory = pipeline_name
 
 
         pipeline_instance_id = pipeline_instance_id or pipeline_name
