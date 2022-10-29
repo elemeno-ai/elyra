@@ -20,12 +20,12 @@ import tarfile
 import tempfile
 
 
-WILDCARDS = ['*', '?', '[']
+WILDCARDS = ["*", "?", "["]
 
 
 def create_project_temp_dir():
     temp_dir = tempfile.gettempdir()
-    project_temp_dir = os.path.join(temp_dir, 'elyra')
+    project_temp_dir = os.path.join(temp_dir, "elyra")
     if not os.path.exists(project_temp_dir):
         os.mkdir(project_temp_dir)
     return project_temp_dir
@@ -37,7 +37,7 @@ def directory_in_list(directory, filenames):
 
 
 def has_wildcards(filename):
-    """Returns True if the filename contains wildcard characters per https://docs.python.org/3/library/fnmatch.html """
+    """Returns True if the filename contains wildcard characters per https://docs.python.org/3/library/fnmatch.html"""
     return len(set(WILDCARDS) & set(list(filename))) > 0
 
 
@@ -53,7 +53,7 @@ def create_temp_archive(archive_name, source_dir, filenames=None, recursive=Fals
     :param source_dir: the root folder containing source files
     :param filenames: the list of filenames, each of which can contain wildcards and/or specify subdirectories
     :param recursive: flag to include sub directories recursively
-    :param require_complete: flag to indicate an exception should be raise if all filenames are not included
+    :param require_complete: flag to indicate an exception should be raised if all filenames are not included
     :return: full path of the created archive
     """
 
@@ -61,7 +61,7 @@ def create_temp_archive(archive_name, source_dir, filenames=None, recursive=Fals
         """Filter files from the generated archive"""
         if tarinfo.type == tarfile.DIRTYPE:
             # ignore hidden directories (e.g. ipynb checkpoints and/or trash contents)
-            if any(dir.startswith('.') for dir in tarinfo.name.split('/')):
+            if any(dir.startswith(".") for dir in tarinfo.name.split("/")):
                 return None
             # always return the base directory (empty string) otherwise tar will be empty
             elif not tarinfo.name:
@@ -118,9 +118,15 @@ def create_temp_archive(archive_name, source_dir, filenames=None, recursive=Fals
     with tarfile.open(archive, "w:gz", dereference=True) as tar:
         tar.add(source_dir, arcname="", filter=tar_filter)
 
+    # Get the list of dependencies by discarding the first item of filenames, which is always the source file.
+    dependencies_set = set([] if not filenames else filenames[1:])
+    wildcard_expression_list = [f"{WILDCARDS[0]}.py", f"{WILDCARDS[0]}.r"]  # Supported script file extensions.
+    wildcard_expression = len(dependencies_set) == 1 and next(iter(dependencies_set)) in wildcard_expression_list
+
     if require_complete and not include_all:
-        # compare matched_set against filenames_set to ensure they're the same.
-        if len(filenames_set) > len(matched_set):
+        # Compare matched_set against filenames_set to ensure they're the same.
+        # Tolerate no matching files when a single filename is a wildcard_expression.
+        if len(filenames_set) > len(matched_set) and not wildcard_expression:
             raise FileNotFoundError(filenames_set - matched_set)  # Only include the missing filenames
 
     return archive

@@ -1,6 +1,6 @@
 {
-  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/meta-schema.json",
-  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/kfp.json",
+  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/meta-schema.json",
+  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/kfp.json",
   "title": "Kubeflow Pipelines",
   "name": "kfp",
   "schemaspace": "runtimes",
@@ -10,7 +10,7 @@
   "uihints": {
     "title": "Kubeflow Pipelines runtimes",
     "icon": "elyra:runtimes",
-    "reference_url": "https://elyra.readthedocs.io/en/latest/user_guide/runtime-conf.html"
+    "reference_url": "https://elyra.readthedocs.io/en/v3.12.0/user_guide/runtime-conf.html"
   },
   "properties": {
     "schema_name": {
@@ -50,7 +50,17 @@
           "format": "uri",
           "uihints": {
             "category": "Kubeflow Pipelines",
-            "placeholder": "https://your-kubeflow-service:port/pipeline"
+            "ui:placeholder": "https://your-kubeflow-service:port/pipeline"
+          }
+        },
+        "public_api_endpoint": {
+          "title": "Public Kubeflow Pipelines API Endpoint",
+          "description": "The public Kubeflow Pipelines API endpoint",
+          "type": "string",
+          "format": "uri",
+          "uihints": {
+            "category": "Kubeflow Pipelines",
+            "ui:placeholder": "https://your-kubeflow-service:port/pipeline"
           }
         },
         "user_namespace": {
@@ -70,7 +80,6 @@
           "enum": ["Argo", "Tekton"],
           "default": "Argo",
           "uihints": {
-            "field_type": "dropdown",
             "category": "Kubeflow Pipelines"
           }
         },
@@ -81,7 +90,6 @@
           "enum": ["{AUTH_PROVIDER_PLACEHOLDERS}"],
           "default": "{DEFAULT_AUTH_PROVIDER_PLACEHOLDER}",
           "uihints": {
-            "field_type": "dropdown",
             "category": "Kubeflow Pipelines"
           }
         },
@@ -98,7 +106,7 @@
           "description": "Password for the specified username. This property is required for all authentication types, except NO_AUTHENTICATION and KUBERNETES_SERVICE_ACCOUNT_TOKEN.",
           "type": "string",
           "uihints": {
-            "secure": true,
+            "ui:field": "password",
             "category": "Kubeflow Pipelines"
           }
         },
@@ -109,7 +117,17 @@
           "format": "uri",
           "uihints": {
             "category": "Cloud Object Storage",
-            "placeholder": "https://your-cos-service:port"
+            "ui:placeholder": "https://your-cos-service:port"
+          }
+        },
+        "public_cos_endpoint": {
+          "title": "Public Cloud Object Storage Endpoint",
+          "description": "The public Cloud Object Storage endpoint",
+          "type": "string",
+          "format": "uri",
+          "uihints": {
+            "category": "Cloud Object Storage",
+            "ui:placeholder": "https://your-public-cos-endpoint:port"
           }
         },
         "cos_bucket": {
@@ -134,7 +152,6 @@
           ],
           "default": "USER_CREDENTIALS",
           "uihints": {
-            "field_type": "dropdown",
             "category": "Cloud Object Storage"
           }
         },
@@ -143,7 +160,7 @@
           "description": "Kubernetes secret that's defined in the specified user namespace, containing the Cloud Object Storage username and password. This property is required for authentication type KUBERNETES_SECRET.",
           "type": "string",
           "uihints": {
-            "secure": true,
+            "ui:field": "password",
             "category": "Cloud Object Storage"
           }
         },
@@ -161,16 +178,21 @@
           "type": "string",
           "minLength": 8,
           "uihints": {
-            "secure": true,
+            "ui:field": "password",
             "category": "Cloud Object Storage"
           }
         },
         "tags": {
           "title": "Tags",
           "description": "Tags for categorizing Kubeflow pipelines",
+          "uniqueItems": true,
           "type": "array",
+          "items": {
+            "minLength": 1,
+            "pattern": "^[^ \t]+([ \t]+[^ \t]+)*$"
+          },
           "uihints": {
-            "field_type": "tags"
+            "ui:field": "tags"
           }
         }
       },

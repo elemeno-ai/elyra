@@ -1,6 +1,6 @@
 {
-  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/meta-schema.json",
-  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/airflow.json",
+  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/meta-schema.json",
+  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/airflow.json",
   "title": "Apache Airflow",
   "name": "airflow",
   "schemaspace": "runtimes",
@@ -10,7 +10,7 @@
   "uihints": {
     "title": "Apache Airflow runtimes",
     "icon": "elyra:runtimes",
-    "reference_url": "https://elyra.readthedocs.io/en/latest/user_guide/runtime-conf.html"
+    "reference_url": "https://elyra.readthedocs.io/en/v3.12.0/user_guide/runtime-conf.html"
   },
   "properties": {
     "schema_name": {
@@ -50,7 +50,7 @@
           "format": "uri",
           "uihints": {
             "category": "Apache Airflow",
-            "placeholder": "https://your-airflow-webserver:port"
+            "ui:placeholder": "https://your-airflow-webserver:port"
           }
         },
         "user_namespace": {
@@ -71,7 +71,6 @@
           "enum": ["{GIT_TYPES_PLACEHOLDER}"],
           "default": "{GIT_DEFAULT_TYPE_PLACEHOLDER}",
           "uihints": {
-            "field_type": "dropdown",
             "category": "Apache Airflow"
           }
         },
@@ -83,7 +82,7 @@
           "default": "https://api.github.com",
           "uihints": {
             "category": "Apache Airflow",
-            "placeholder": "https://your-github-or-gitlab-endpoint"
+            "ui:placeholder": "https://your-github-or-gitlab-endpoint"
           }
         },
         "github_repo": {
@@ -92,7 +91,7 @@
           "type": "string",
           "uihints": {
             "category": "Apache Airflow",
-            "placeholder": "user-or-org/dag-repo-name"
+            "ui:placeholder": "user-or-org/dag-repo-name"
           }
         },
         "github_branch": {
@@ -108,7 +107,7 @@
           "description": "Token that has permission to push to the DAG repository",
           "type": "string",
           "uihints": {
-            "secure": true,
+            "ui:field": "password",
             "category": "Apache Airflow"
           }
         },
@@ -119,7 +118,17 @@
           "format": "uri",
           "uihints": {
             "category": "Cloud Object Storage",
-            "placeholder": "https://your-cos-service:port"
+            "ui:placeholder": "https://your-cos-service:port"
+          }
+        },
+        "public_cos_endpoint": {
+          "title": "Public Cloud Object Storage Endpoint",
+          "description": "The public Cloud Object Storage endpoint",
+          "type": "string",
+          "format": "uri",
+          "uihints": {
+            "category": "Cloud Object Storage",
+            "ui:placeholder": "https://your-public-cos-endpoint:port"
           }
         },
         "cos_bucket": {
@@ -144,7 +153,6 @@
           ],
           "default": "USER_CREDENTIALS",
           "uihints": {
-            "field_type": "dropdown",
             "category": "Cloud Object Storage"
           }
         },
@@ -153,7 +161,7 @@
           "description": "Kubernetes secret that's defined in the specified user namespace, containing the Cloud Object Storage username and password. This property is required for authentication type KUBERNETES_SECRET.",
           "type": "string",
           "uihints": {
-            "secure": true,
+            "ui:field": "password",
             "category": "Cloud Object Storage"
           }
         },
@@ -171,16 +179,21 @@
           "type": "string",
           "minLength": 8,
           "uihints": {
-            "secure": true,
+            "ui:field": "password",
             "category": "Cloud Object Storage"
           }
         },
         "tags": {
           "title": "Tags",
           "description": "Tags for categorizing Apache Airflow",
+          "uniqueItems": true,
           "type": "array",
+          "items": {
+            "minLength": 1,
+            "pattern": "^[^ \t]+([ \t]+[^ \t]+)*$"
+          },
           "uihints": {
-            "field_type": "tags"
+            "ui:field": "tags"
           }
         }
       },

@@ -24,19 +24,19 @@ The CLI is part of the Elyra installation and can be used without a running Jupy
 
 ### Managing metadata
 
-In Elyra, information such as a [runtime configuration](runtime-conf.md) or a [runtime image](runtime-image-conf) is considered metadata. `elyra-metadata` is used to list, create, update, export or delete metadata.
+In Elyra, information such as a [runtime configuration](runtime-conf.md) or a [runtime image](runtime-image-conf) is considered metadata. `elyra-metadata` is used to list, create, update, export, import or delete metadata.
 
 #### Getting help
 
 To display the list of commands that `elyra-metadata` supports, run
 
 ```
-$ elyra-metadata -h
+$ elyra-metadata --help
 ```
 
 To learn more about a specific command, e.g. `list`, run
 ```
-$ elyra-metadata list -h
+$ elyra-metadata list --help
 ```
 
 #### Formatting list output
@@ -56,8 +56,6 @@ Specify the `--json` parameter to return the results in JSON to allow for progra
 
 ```
 $ elyra-metadata list runtime-images --json | jq ".[].display_name"
-"Tensorflow 1.15.2"
-"Tensorflow 1.15.2 with GPU"
 "R Script"
 "Anaconda (2020.07) with Python 3.x"
 "Tensorflow 2.3.0"
@@ -66,10 +64,9 @@ $ elyra-metadata list runtime-images --json | jq ".[].display_name"
 "Tensorflow 2.3.0 with GPU"
 "Pytorch 1.4 with CUDA-runtime"
 "Pandas on quay.io"
-
 ```
 
-#### List, create, update, export, and delete metadata
+#### List, create, update, export, import and delete metadata
 
 Refer to the topics below for detailed information on how to use `elyra-metadata` to
  - [Manage code snippets](code-snippets.html#managing-code-snippets-using-the-elyra-cli)
@@ -97,8 +94,11 @@ Application-level properties within a schema reside as top-level properties with
         "title": "Tags",
         "description": "Tags for categorizing snippets",
         "type": "array",
+        "items": {
+          "type": "string"
+        },
         "uihints": {
-          "field_type": "tags"
+          "ui:field": "tags"
         }
       },
       "language": {
@@ -106,7 +106,7 @@ Application-level properties within a schema reside as top-level properties with
         "description": "Code snippet implementation language",
         "type": "string",
         "uihints": {
-          "field_type": "dropdown",
+          "ui:field": "dropdown",
           "default_choices": [
             "Python",
             "Java",
@@ -123,7 +123,7 @@ Application-level properties within a schema reside as top-level properties with
         "description": "Code snippet code lines",
         "type": "array",
         "uihints": {
-          "field_type": "code",
+          "ui:field": "code",
           "category": "Source"
         }
       }
@@ -146,6 +146,8 @@ and `elyra-metadata` generates options corresponding to each of the `metadata` p
 --code=<array> (Required. Format: "['item1', 'item2']" or "item1,item2") 
 	Code snippet code lines
 ```
+
+Tip: You can omit the `=` separator character. For example, `--description <string>`.
 
 When complex properties are present, the complexity of interpreting their semantics into CLI options is not sustainable.  To address this, two options can be used that bypass the per-property processing and allow you to create or update the instance directly.
 
@@ -174,13 +176,13 @@ To display the list of commands that `elyra-pipeline` supports, run
 $ elyra-pipeline --help
 ```
 
-To learn more about a specific command, e.g. `run`, run
+To learn more about a specific command, e.g. `submit`, run
 ```
-$ elyra-pipeline run --help
+$ elyra-pipeline submit --help
 ```
 
 Refer to the topics below for detailed information on how to use `elyra-pipeline` to
- - [Display pipeline information summary](pipelines.html#running-a-pipeline-using-the-command-line)
+ - [Display pipeline summary and dependencies](pipelines.html#describing-a-pipeline-from-the-command-line-interface)
  - [Run a pipeline locally](pipelines.html#running-a-pipeline-from-the-command-line-interface)
  - [Submit a pipeline for remote execution](pipelines.html#running-a-pipeline-from-the-command-line-interface)
  - [Export a pipeline](pipelines.html#exporting-a-pipeline-from-the-command-line-interface)

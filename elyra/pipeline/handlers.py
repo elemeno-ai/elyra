@@ -16,6 +16,7 @@
 from datetime import datetime
 from http.client import responses
 import json
+from logging import Logger
 import mimetypes
 from typing import List
 from typing import Optional
@@ -31,6 +32,7 @@ from elyra.pipeline.component import Component
 from elyra.pipeline.component_catalog import ComponentCache
 from elyra.pipeline.component_catalog import RefreshInProgressError
 from elyra.pipeline.parser import PipelineParser
+from elyra.pipeline.pipeline_definition import PipelineDefinition
 from elyra.pipeline.processor import PipelineProcessorManager
 from elyra.pipeline.processor import PipelineProcessorRegistry
 from elyra.pipeline.runtime_type import RuntimeProcessorType
@@ -39,11 +41,36 @@ from elyra.pipeline.validation import PipelineValidationManager
 from elyra.util.http import HttpErrorMixin
 
 
-MIMETYPE_MAP = {
-    ".yaml": "text/x-yaml",
-    ".py": "text/x-python",
-    None: "text/plain"
-}
+MIMETYPE_MAP = {".yaml": "text/x-yaml", ".py": "text/x-python", None: "text/plain"}
+
+
+def get_runtime_processor_type(runtime_type: str, log: Logger, request_path: str) -> Optional[RuntimeProcessorType]:
+    """
+    Gets the runtime processor type for the runtime type given in the request path.
+
+    :param runtime_type: can be the shorthand runtime ('kfp', 'airflow') or the
+        runtime type name ('KUBEFLOW_PIPELINES', 'APACHE_AIRFLOW') (preferred).
+    :param log: used to log the appropriate warning for shorthand-name requests
+    :param request_path: full request path of the endpoint
+
+    :returns: the RuntimeProcessorType for the given runtime_type, or None
+    """
+    processor_manager = PipelineProcessorManager.instance()
+    if processor_manager.is_supported_runtime_type(runtime_type):
+        # The request path uses the appropriate RuntimeProcessorType name. Use this
+        # to get the RuntimeProcessorType instance to pass to get_all_components
+        return RuntimeProcessorType.get_instance_by_name(runtime_type)
+    elif processor_manager.is_supported_runtime(runtime_type):
+        # The endpoint path contains the shorthand version of a runtime (e.g., 'kfp',
+        # 'airflow'). This case and its associated functions should eventually be removed
+        # in favor of using the RuntimeProcessorType name in the request path.
+        log.warning(
+            f"Deprecation warning: when calling endpoint '{request_path}' "
+            f"use runtime type name (e.g. 'KUBEFLOW_PIPELINES', 'APACHE_AIRFLOW') "
+            f"instead of shorthand name (e.g., 'kfp', 'airflow')"
+        )
+        return processor_manager.get_runtime_type(runtime_type)
+    return None
 
 
 class PipelineExportHandler(HttpErrorMixin, APIHandler):
@@ -52,56 +79,51 @@ class PipelineExportHandler(HttpErrorMixin, APIHandler):
     @web.authenticated
     async def get(self):
         msg_json = dict(title="Operation not supported.")
-        self.set_header("Content-Type", 'application/json')
+        self.set_header("Content-Type", "application/json")
         await self.finish(msg_json)
 
     @web.authenticated
     async def post(self, *args, **kwargs):
         self.log.debug("Pipeline Export handler now executing post request")
 
-        parent = self.settings.get('elyra')
+        parent = self.settings.get("elyra")
         payload = self.get_json_body()
 
-        self.log.debug("JSON payload: %s", json.dumps(payload, indent=2, separators=(',', ': ')))
+        self.log.debug(f"JSON payload: {json.dumps(payload, indent=2, separators=(',', ': '))}")
 
-        pipeline_definition = payload['pipeline']
-        pipeline_export_format = payload['export_format']
-        pipeline_export_path = payload['export_path']
-        pipeline_overwrite = payload['overwrite']
+        pipeline_definition = payload["pipeline"]
+        pipeline_export_format = payload["export_format"]
+        pipeline_export_path = payload["export_path"]
+        pipeline_overwrite = payload["overwrite"]
 
-        response = await PipelineValidationManager.instance().validate(pipeline=pipeline_definition)
+        response = await PipelineValidationManager.instance().validate(pipeline_definition)
         self.log.debug(f"Validation checks completed. Results as follows: {response.to_json()}")
 
         if not response.has_fatal:
-            pipeline = PipelineParser(root_dir=self.settings['server_root_dir'],
-                                      parent=parent).parse(pipeline_definition)
+            pipeline = PipelineParser(root_dir=self.settings["server_root_dir"], parent=parent).parse(
+                pipeline_definition
+            )
 
             pipeline_exported_path = await PipelineProcessorManager.instance().export(
-                pipeline,
-                pipeline_export_format,
-                pipeline_export_path,
-                pipeline_overwrite
+                pipeline, pipeline_export_format, pipeline_export_path, pipeline_overwrite
             )
             json_msg = json.dumps({"export_path": pipeline_export_path})
             self.set_status(201)
-            self.set_header("Content-Type", 'application/json')
-            location = url_path_join(
-                self.base_url,
-                'api',
-                'contents',
-                pipeline_exported_path
-            )
-            self.set_header('Location', location)
+            self.set_header("Content-Type", "application/json")
+            location = url_path_join(self.base_url, "api", "contents", pipeline_exported_path)
+            self.set_header("Location", location)
         else:
-            json_msg = json.dumps({
-                'reason': responses.get(400),
-                'message': 'Errors found in pipeline',
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'issues': response.to_json().get('issues')
-            })
+            json_msg = json.dumps(
+                {
+                    "reason": responses.get(400),
+                    "message": "Errors found in pipeline",
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "issues": response.to_json().get("issues"),
+                }
+            )
             self.set_status(400)
 
-        self.set_header("Content-Type", 'application/json')
+        self.set_header("Content-Type", "application/json")
         await self.finish(json_msg)
 
 
@@ -118,9 +140,9 @@ class PipelineSchedulerHandler(HttpErrorMixin, APIHandler):
     async def post(self, *args, **kwargs):
         self.log.debug("Pipeline SchedulerHandler now executing post request")
 
-        parent = self.settings.get('elyra')
+        parent = self.settings.get("elyra")
         pipeline_definition = self.get_json_body()
-        self.log.debug("JSON payload: %s", pipeline_definition)
+        self.log.debug(f"JSON payload: {pipeline_definition}")
 
         response = await PipelineValidationManager.instance().validate(pipeline=pipeline_definition)
 
@@ -128,21 +150,24 @@ class PipelineSchedulerHandler(HttpErrorMixin, APIHandler):
 
         if not response.has_fatal:
             self.log.debug("Processing the pipeline submission and executing request")
-            pipeline = PipelineParser(root_dir=self.settings['server_root_dir'],
-                                      parent=parent).parse(pipeline_definition)
+            pipeline = PipelineParser(root_dir=self.settings["server_root_dir"], parent=parent).parse(
+                pipeline_definition
+            )
             response = await PipelineProcessorManager.instance().process(pipeline)
             json_msg = json.dumps(response.to_json())
             self.set_status(200)
         else:
-            json_msg = json.dumps({
-                'reason': responses.get(400),
-                'message': 'Errors found in pipeline',
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'issues': response.to_json().get('issues')
-            })
+            json_msg = json.dumps(
+                {
+                    "reason": responses.get(400),
+                    "message": "Errors found in pipeline",
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "issues": response.to_json().get("issues"),
+                }
+            )
             self.set_status(400)
 
-        self.set_header("Content-Type", 'application/json')
+        self.set_header("Content-Type", "application/json")
         await self.finish(json_msg)
 
 
@@ -153,20 +178,8 @@ class PipelineComponentHandler(HttpErrorMixin, APIHandler):
     async def get(self, runtime_type):
         self.log.debug(f"Retrieving pipeline components for runtime type: {runtime_type}")
 
-        processor_manager = PipelineProcessorManager.instance()
-        if processor_manager.is_supported_runtime(runtime_type):
-            # The endpoint path contains the shorthand version of a runtime (e.g., 'kfp',
-            # 'airflow'). This case and its associated functions should eventually be removed
-            # in favor of using the RuntimeProcessorType name in the request path.
-            self.log.warning(f"Deprecation warning: when calling endpoint '{self.request.path}' "
-                             f"use runtime type name (e.g. 'KUBEFLOW_PIPELINES', 'APACHE_AIRFLOW') "
-                             f"instead of shorthand name (e.g., 'kfp', 'airflow')")
-            runtime_processor_type = processor_manager.get_runtime_type(runtime_type)
-        elif processor_manager.is_supported_runtime_type(runtime_type):
-            # The request path uses the appropriate RuntimeProcessorType name. Use this
-            # to get the RuntimeProcessorType instance to pass to get_all_components
-            runtime_processor_type = RuntimeProcessorType.get_instance_by_name(runtime_type)
-        else:
+        runtime_processor_type = get_runtime_processor_type(runtime_type, self.log, self.request.path)
+        if not runtime_processor_type:
             raise web.HTTPError(400, f"Invalid runtime type '{runtime_type}'")
 
         # Include generic components for all runtime types
@@ -178,8 +191,31 @@ class PipelineComponentHandler(HttpErrorMixin, APIHandler):
         palette_json = ComponentCache.to_canvas_palette(components=components)
 
         self.set_status(200)
-        self.set_header("Content-Type", 'application/json')
+        self.set_header("Content-Type", "application/json")
         await self.finish(palette_json)
+
+
+class PipelinePropertiesHandler(HttpErrorMixin, APIHandler):
+    """Handler to expose method calls to retrieve pipeline properties"""
+
+    @web.authenticated
+    async def get(self, runtime_type):
+        self.log.debug(f"Retrieving pipeline components for runtime type: {runtime_type}")
+
+        runtime_processor_type = get_runtime_processor_type(runtime_type, self.log, self.request.path)
+        if not runtime_processor_type:
+            raise web.HTTPError(400, f"Invalid runtime type '{runtime_type}'")
+
+        # Get pipeline properties json
+        pipeline_properties_json = PipelineDefinition.get_canvas_properties_from_template(
+            package_name="templates/pipeline",
+            template_name="pipeline_properties_template.jinja2",
+            runtime_type=runtime_processor_type.name,
+        )
+
+        self.set_status(200)
+        self.set_header("Content-Type", "application/json")
+        await self.finish(pipeline_properties_json)
 
 
 class PipelineComponentPropertiesHandler(HttpErrorMixin, APIHandler):
@@ -189,8 +225,8 @@ class PipelineComponentPropertiesHandler(HttpErrorMixin, APIHandler):
         """
         Get the MIME type for the component definition content.
         """
-        if ext == '.yml':
-            ext = '.yaml'
+        if ext == ".yml":
+            ext = ".yaml"
 
         # Get mimetype from mimetypes map or built-in mimetypes package; default to plaintext
         mimetype = MIMETYPE_MAP.get(ext, mimetypes.guess_type(f"file{ext}")[0]) or "text/plain"
@@ -198,25 +234,13 @@ class PipelineComponentPropertiesHandler(HttpErrorMixin, APIHandler):
 
     @web.authenticated
     async def get(self, runtime_type, component_id):
-        self.log.debug(f'Retrieving pipeline component properties for component: {component_id}')
+        self.log.debug(f"Retrieving pipeline component properties for component: {component_id}")
 
         if not component_id:
             raise web.HTTPError(400, "Missing component ID")
 
-        processor_manager = PipelineProcessorManager.instance()
-        if processor_manager.is_supported_runtime(runtime_type):
-            # The endpoint path contains the shorthand version of a runtime (e.g., 'kfp',
-            # 'airflow'). This case and its associated functions should eventually be removed
-            # in favor of using the RuntimeProcessorType name in the request path.
-            self.log.warning(f"Deprecation warning: when calling endpoint '{self.request.path}' "
-                             f"use runtime type name (e.g. 'KUBEFLOW_PIPELINES', 'APACHE_AIRFLOW') "
-                             f"instead of shorthand name (e.g., 'kfp', 'airflow')")
-            runtime_processor_type = processor_manager.get_runtime_type(runtime_type)
-        elif processor_manager.is_supported_runtime_type(runtime_type):
-            # The request path uses the appropriate RuntimeProcessorType name. Use this
-            # to get the RuntimeProcessorType instance to pass to get_component
-            runtime_processor_type = RuntimeProcessorType.get_instance_by_name(runtime_type)
-        else:
+        runtime_processor_type = get_runtime_processor_type(runtime_type, self.log, self.request.path)
+        if not runtime_processor_type:
             raise web.HTTPError(400, f"Invalid runtime type '{runtime_type}'")
 
         # Try to get component_id as a generic component; assigns None if id is not a generic component
@@ -224,8 +248,9 @@ class PipelineComponentPropertiesHandler(HttpErrorMixin, APIHandler):
 
         # Try to retrieve a runtime-type-specific component; assigns None if not found
         if not component:
-            component = ComponentCache.instance() \
-                .get_component(platform=runtime_processor_type, component_id=component_id)
+            component = ComponentCache.instance().get_component(
+                platform=runtime_processor_type, component_id=component_id
+            )
 
         if not component:
             raise web.HTTPError(404, f"Component '{component_id}' not found")
@@ -236,14 +261,11 @@ class PipelineComponentPropertiesHandler(HttpErrorMixin, APIHandler):
         else:
             # Return component definition content
             json_response = json.dumps(
-                {
-                    "content": component.definition,
-                    "mimeType": self.get_mimetype(component.file_extension)
-                }
+                {"content": component.definition, "mimeType": self.get_mimetype(component.file_extension)}
             )
 
         self.set_status(200)
-        self.set_header("Content-Type", 'application/json')
+        self.set_header("Content-Type", "application/json")
         await self.finish(json_response)
 
 
@@ -261,13 +283,13 @@ class PipelineValidationHandler(HttpErrorMixin, APIHandler):
         self.log.debug("Pipeline Validation Handler now executing post request")
 
         pipeline_definition = self.get_json_body()
-        self.log.debug("Pipeline payload: %s", pipeline_definition)
+        self.log.debug(f"Pipeline payload: {pipeline_definition}")
 
-        response = await PipelineValidationManager.instance().validate(pipeline=pipeline_definition)
+        response = await PipelineValidationManager.instance().validate(pipeline_definition)
         json_msg = response.to_json()
 
         self.set_status(200)
-        self.set_header("Content-Type", 'application/json')
+        self.set_header("Content-Type", "application/json")
         await self.finish(json_msg)
 
 
@@ -284,7 +306,7 @@ class PipelineRuntimeTypesHandler(HttpErrorMixin, APIHandler):
             runtime_types.append(runtime_type.to_dict())
 
         self.set_status(200)
-        self.set_header("Content-Type", 'application/json')
+        self.set_header("Content-Type", "application/json")
         await self.finish({"runtime_types": runtime_types})
 
 
@@ -296,7 +318,7 @@ class ComponentCacheHandler(HttpErrorMixin, APIHandler):
 
         # Validate the body
         cache_refresh = self.get_json_body()
-        if 'action' not in cache_refresh or cache_refresh['action'] != 'refresh':
+        if "action" not in cache_refresh or cache_refresh["action"] != "refresh":
             raise web.HTTPError(400, reason="A body of {'action': 'refresh'} is required!")
 
         try:
@@ -317,19 +339,19 @@ class ComponentCacheCatalogHandler(HttpErrorMixin, APIHandler):
 
         # Validate the body
         cache_refresh = self.get_json_body()
-        if 'action' not in cache_refresh or cache_refresh['action'] != 'refresh':
+        if "action" not in cache_refresh or cache_refresh["action"] != "refresh":
             raise web.HTTPError(400, reason="A body of {'action': 'refresh'} is required.")
 
         try:
             # Ensure given catalog name is a metadata instance
-            catalog_instance = MetadataManager(
-                schemaspace=ComponentCatalogs.COMPONENT_CATALOGS_SCHEMASPACE_ID
-            ).get(name=catalog)
+            catalog_instance = MetadataManager(schemaspace=ComponentCatalogs.COMPONENT_CATALOGS_SCHEMASPACE_ID).get(
+                name=catalog
+            )
         except MetadataNotFoundError:
             raise web.HTTPError(404, f"Catalog '{catalog}' cannot be found.")
 
         self.log.debug(f"Refreshing component cache for catalog with name '{catalog}'...")
-        ComponentCache.instance().update(catalog=catalog_instance, action='modify')
+        ComponentCache.instance().update(catalog=catalog_instance, action="modify")
         self.set_status(204)
 
         await self.finish()

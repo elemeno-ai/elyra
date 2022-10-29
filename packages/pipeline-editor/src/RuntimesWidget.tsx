@@ -63,8 +63,8 @@ class RuntimesDisplay extends MetadataDisplay<
   IMetadataDisplayState
 > {
   renderExpandableContent(metadata: IDictionary<any>): JSX.Element {
-    const apiEndpoint = addTrailingSlash(metadata.metadata.api_endpoint);
-    const cosEndpoint = addTrailingSlash(metadata.metadata.cos_endpoint);
+    let apiEndpoint = addTrailingSlash(metadata.metadata.api_endpoint);
+    let cosEndpoint = addTrailingSlash(metadata.metadata.cos_endpoint);
 
     let githubRepoElement = null;
     let metadata_props = null;
@@ -92,6 +92,17 @@ class RuntimesDisplay extends MetadataDisplay<
           <br />
         </span>
       );
+    }
+    if (metadata.schema_name === 'kfp') {
+      if (metadata.metadata.public_api_endpoint) {
+        // user specified a public API endpoint. use it instead of the API endpoint
+        apiEndpoint = addTrailingSlash(metadata.metadata.public_api_endpoint);
+      }
+    }
+
+    if (metadata.metadata.public_cos_endpoint) {
+      // user specified a public COS endpoint. use it instead of the API endpoint
+      cosEndpoint = addTrailingSlash(metadata.metadata.public_cos_endpoint);
     }
 
     return (

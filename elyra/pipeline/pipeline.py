@@ -13,7 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-from logging import Logger
+from __future__ import annotations
+
 import os
 import sys
 from typing import Any
@@ -21,9 +22,14 @@ from typing import Dict
 from typing import List
 from typing import Optional
 
+from elyra.pipeline.component_parameter import ElyraPropertyList
+from elyra.pipeline.component_parameter import EnvironmentVariable
+from elyra.pipeline.pipeline_constants import ENV_VARIABLES
+from elyra.pipeline.pipeline_constants import RUNTIME_IMAGE
+
 # TODO: Make pipeline version available more widely
 # as today is only available on the pipeline editor
-PIPELINE_CURRENT_VERSION = 7
+PIPELINE_CURRENT_VERSION = 8
 PIPELINE_CURRENT_SCHEMA = 3.0
 
 
@@ -35,29 +41,41 @@ class Operation(object):
     generic_node_types = ["execute-notebook-node", "execute-python-node", "execute-r-node"]
 
     @classmethod
-    def create_instance(cls, id: str, type: str, name: str, classifier: str,
-                        parent_operation_ids: Optional[List[str]] = None,
-                        component_params: Optional[Dict[str, Any]] = None) -> 'Operation':
-        """Class method that creates the appropriate instance of Operation based on inputs. """
+    def create_instance(
+        cls,
+        id: str,
+        type: str,
+        name: str,
+        classifier: str,
+        parent_operation_ids: Optional[List[str]] = None,
+        component_params: Optional[Dict[str, Any]] = None,
+        elyra_params: Optional[Dict[str, Any]] = None,
+    ) -> Operation:
+        """Class method that creates the appropriate instance of Operation based on inputs."""
 
-        if classifier in Operation.generic_node_types:
-            return GenericOperation(id, type, name, classifier,
-                                    parent_operation_ids=parent_operation_ids, component_params=component_params)
-        return Operation(id, type, name, classifier,
-                         parent_operation_ids=parent_operation_ids, component_params=component_params)
+        if Operation.is_generic_operation(classifier):
+            return GenericOperation(id, type, name, classifier, parent_operation_ids, component_params, elyra_params)
+        return Operation(id, type, name, classifier, parent_operation_ids, component_params, elyra_params)
 
-    def __init__(self, id: str, type: str, name: str, classifier: str,
-                 parent_operation_ids: Optional[List[str]] = None,
-                 component_params: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        id: str,
+        type: str,
+        name: str,
+        classifier: str,
+        parent_operation_ids: Optional[List[str]] = None,
+        component_params: Optional[Dict[str, Any]] = None,
+        elyra_params: Optional[Dict[str, Any]] = None,
+    ):
         """
-        :param id: Generated UUID, 128 bit number used as a unique identifier
-                   e.g. 123e4567-e89b-12d3-a456-426614174000
+        :param id: Generated UUID, 128 bit number used as a unique identifier, e.g. 123e4567-e89b-12d3-a456-426614174000
         :param type: The type of node e.g. execution_node
         :param classifier: indicates the operation's class
         :param name: The name of the operation
         :param parent_operation_ids: List of parent operation 'ids' required to execute prior to this operation
         :param component_params: dictionary of parameter key:value pairs that are used in the creation of a
-                                 a non-standard operation instance
+            non-Generic operation instance
+        :param elyra_params: dictionary of parameter key:value pairs that are owned by Elyra
         """
 
         # Validate that the operation has all required properties
@@ -75,12 +93,13 @@ class Operation(object):
         self._classifier = classifier
         self._name = name
         self._parent_operation_ids = parent_operation_ids or []
-        self._component_params = component_params
+        self._component_params = component_params or {}
+        self._elyra_params = elyra_params or {}
         self._doc = None
 
         # Scrub the inputs and outputs lists
-        self._component_params["inputs"] = Operation._scrub_list(component_params.get('inputs', []))
-        self._component_params["outputs"] = Operation._scrub_list(component_params.get('outputs', []))
+        self._component_params["inputs"] = Operation._scrub_list(component_params.get("inputs", []))
+        self._component_params["outputs"] = Operation._scrub_list(component_params.get("outputs", []))
 
     @property
     def id(self) -> str:
@@ -123,29 +142,39 @@ class Operation(object):
         return self._component_params or {}
 
     @property
+    def elyra_params(self) -> Optional[Dict[str, Any]]:
+        return self._elyra_params or {}
+
+    @property
     def inputs(self) -> Optional[List[str]]:
-        return self._component_params.get('inputs')
+        return self._component_params.get("inputs")
 
     @inputs.setter
     def inputs(self, value: List[str]):
-        self._component_params['inputs'] = value
+        self._component_params["inputs"] = value
 
     @property
     def outputs(self) -> Optional[List[str]]:
-        return self._component_params.get('outputs')
+        return self._component_params.get("outputs")
+
+    @property
+    def is_generic(self) -> bool:
+        return isinstance(self, GenericOperation)
 
     @outputs.setter
     def outputs(self, value: List[str]):
-        self._component_params['outputs'] = value
+        self._component_params["outputs"] = value
 
-    def __eq__(self, other: 'Operation') -> bool:
+    def __eq__(self, other: Operation) -> bool:
         if isinstance(self, other.__class__):
-            return self.id == other.id and \
-                self.type == other.type and \
-                self.classifier == other.classifier and \
-                self.name == other.name and \
-                self.parent_operation_ids == other.parent_operation_ids and \
-                self.component_params == other.component_params
+            return (
+                self.id == other.id
+                and self.type == other.type
+                and self.classifier == other.classifier
+                and self.name == other.name
+                and self.parent_operation_ids == other.parent_operation_ids
+                and self.component_params == other.component_params
+            )
         return False
 
     def __str__(self) -> str:
@@ -153,24 +182,12 @@ class Operation(object):
         for key, value in self.component_params_as_dict.items():
             params += f"\t{key}: {value}, \n"
 
-        return f"componentID : {self.id} \n " \
-            f"name : {self.name} \n " \
-            f"parent_operation_ids : {self.parent_operation_ids} \n " \
+        return (
+            f"componentID : {self.id} \n "
+            f"name : {self.name} \n "
+            f"parent_operation_ids : {self.parent_operation_ids} \n "
             f"component_parameters: {{\n{params}}} \n"
-
-    @staticmethod
-    def _log_info(msg: str, logger: Optional[Logger] = None):
-        if logger:
-            logger.info(msg)
-        else:
-            print(msg)
-
-    @staticmethod
-    def _log_warning(msg: str, logger: Optional[Logger] = None):
-        if logger:
-            logger.warning(msg)
-        else:
-            print(f"WARNING: {msg}")
+        )
 
     @staticmethod
     def _scrub_list(dirty: Optional[List[Optional[str]]]) -> List[str]:
@@ -184,8 +201,8 @@ class Operation(object):
         return [clean for clean in dirty if clean]
 
     @staticmethod
-    def is_generic_operation(operation_type) -> bool:
-        return operation_type in Operation.generic_node_types
+    def is_generic_operation(operation_classifier) -> bool:
+        return operation_classifier in Operation.generic_node_types
 
 
 class GenericOperation(Operation):
@@ -193,9 +210,16 @@ class GenericOperation(Operation):
     Represents a single operation in a pipeline representing a generic (built-in) component
     """
 
-    def __init__(self, id: str, type: str, name: str, classifier: str,
-                 parent_operation_ids: Optional[List[str]] = None,
-                 component_params: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        id: str,
+        type: str,
+        name: str,
+        classifier: str,
+        parent_operation_ids: Optional[List[str]] = None,
+        component_params: Optional[Dict[str, Any]] = None,
+        elyra_params: Optional[Dict[str, Any]] = None,
+    ):
         """
         :param id: Generated UUID, 128 bit number used as a unique identifier
                    e.g. 123e4567-e89b-12d3-a456-426614174000
@@ -207,7 +231,7 @@ class GenericOperation(Operation):
                                  a non-standard operation instance
 
         Component_params for "generic components" (i.e., those with one of the following classifier values:
-        ["execute-notebook-node", "execute-python-node", "exeucute-r-node"]) can expect to have the following
+        ["execute-notebook-node", "execute-python-node", "execute-r-node"]) can expect to have the following
         entries.
                 filename: The relative path to the source file in the users local environment
                          to be executed e.g. path/to/file.ext
@@ -216,39 +240,42 @@ class GenericOperation(Operation):
                 dependencies: List of local files/directories needed for the operation to run
                              and packaged into each operation's dependency archive
                 include_subdirectories: Include or Exclude subdirectories when packaging our 'dependencies'
-                env_vars: List of Environmental variables to set in the docker image
-                         e.g. FOO="BAR"
+                env_vars: List of Environmental variables to set in the container image, e.g. FOO="BAR"
                 inputs: List of files to be consumed by this operation, produced by parent operation(s)
                 outputs: List of files produced by this operation to be included in a child operation(s)
                 cpu: number of cpus requested to run the operation
                 memory: amount of memory requested to run the operation (in Gi)
                 gpu: number of gpus requested to run the operation
         Entries for other (non-built-in) component types are a function of the respective component.
+
+        :param elyra_params: dictionary of parameter key:value pairs that are owned by Elyra
         """
 
-        super().__init__(id, type, name, classifier,
-                         parent_operation_ids=parent_operation_ids, component_params=component_params)
+        super().__init__(id, type, name, classifier, parent_operation_ids, component_params, elyra_params)
 
-        if not component_params.get('filename'):
+        if not component_params.get("filename"):
             raise ValueError("Invalid pipeline operation: Missing field 'operation filename'.")
-        if not component_params.get('runtime_image'):
+        if not component_params.get("runtime_image"):
             raise ValueError("Invalid pipeline operation: Missing field 'operation runtime image'.")
-        if component_params.get('cpu') and not self._validate_range(component_params.get('cpu'), min_value=1):
+        if component_params.get("cpu") and not self._validate_range(component_params.get("cpu"), min_value=1):
             raise ValueError("Invalid pipeline operation: CPU must be a positive value or None")
-        if component_params.get('gpu') and not self._validate_range(component_params.get('gpu'), min_value=0):
+        if component_params.get("gpu") and not self._validate_range(component_params.get("gpu"), min_value=0):
             raise ValueError("Invalid pipeline operation: GPU must be a positive value or None")
-        if component_params.get('memory') and not self._validate_range(component_params.get('memory'), min_value=1):
+        if component_params.get("memory") and not self._validate_range(component_params.get("memory"), min_value=1):
             raise ValueError("Invalid pipeline operation: Memory must be a positive value or None")
 
         # Re-build object to include default values
-        self._component_params["filename"] = component_params.get('filename')
-        self._component_params["runtime_image"] = component_params.get('runtime_image')
-        self._component_params["dependencies"] = Operation._scrub_list(component_params.get('dependencies', []))
-        self._component_params["include_subdirectories"] = component_params.get('include_subdirectories', False)
-        self._component_params["env_vars"] = Operation._scrub_list(component_params.get('env_vars', []))
-        self._component_params["cpu"] = component_params.get('cpu')
-        self._component_params["gpu"] = component_params.get('gpu')
-        self._component_params["memory"] = component_params.get('memory')
+        self._component_params["filename"] = component_params.get("filename")
+        self._component_params["runtime_image"] = component_params.get("runtime_image")
+        self._component_params["dependencies"] = Operation._scrub_list(component_params.get("dependencies", []))
+        self._component_params["include_subdirectories"] = component_params.get("include_subdirectories", False)
+        self._component_params["cpu"] = component_params.get("cpu")
+        self._component_params["gpu"] = component_params.get("gpu")
+        self._component_params["memory"] = component_params.get("memory")
+
+        if not elyra_params:
+            elyra_params = {}
+        self._elyra_params["env_vars"] = ElyraPropertyList(elyra_params.get(ENV_VARIABLES, []))
 
     @property
     def name(self) -> str:
@@ -262,37 +289,37 @@ class GenericOperation(Operation):
 
     @property
     def filename(self) -> str:
-        return self._component_params.get('filename')
+        return self._component_params.get("filename")
 
     @property
     def runtime_image(self) -> str:
-        return self._component_params.get('runtime_image')
+        return self._component_params.get(RUNTIME_IMAGE)
 
     @property
     def dependencies(self) -> Optional[List[str]]:
-        return self._component_params.get('dependencies')
+        return self._component_params.get("dependencies")
 
     @property
     def include_subdirectories(self) -> Optional[bool]:
-        return self._component_params.get('include_subdirectories')
+        return self._component_params.get("include_subdirectories")
 
     @property
-    def env_vars(self) -> Optional[List[str]]:
-        return self._component_params.get('env_vars')
+    def env_vars(self) -> ElyraPropertyList[EnvironmentVariable]:
+        return self._elyra_params.get(ENV_VARIABLES)
 
     @property
     def cpu(self) -> Optional[str]:
-        return self._component_params.get('cpu')
+        return self._component_params.get("cpu")
 
     @property
     def memory(self) -> Optional[str]:
-        return self._component_params.get('memory')
+        return self._component_params.get("memory")
 
     @property
     def gpu(self) -> Optional[str]:
-        return self._component_params.get('gpu')
+        return self._component_params.get("gpu")
 
-    def __eq__(self, other: 'GenericOperation') -> bool:
+    def __eq__(self, other: GenericOperation) -> bool:
         if isinstance(self, other.__class__):
             return super().__eq__(other)
         return False
@@ -300,60 +327,39 @@ class GenericOperation(Operation):
     def _validate_range(self, value: str, min_value: int = 0, max_value: int = sys.maxsize) -> bool:
         return int(value) in range(min_value, max_value)
 
-    def env_vars_as_dict(self, logger: Optional[Logger] = None) -> Dict[str, str]:
-        """
-        Operation stores environment variables in a list of name=value pairs, while
-        subprocess.run() requires a dictionary - so we must convert.  If no envs are
-        configured on the Operation, an empty dictionary is returned, otherwise envs
-        configured on the Operation are converted to dictionary entries and returned.
-        """
-        envs = {}
-        for nv in self.env_vars:
-            if nv:
-                nv_pair = nv.split("=", 1)
-                if len(nv_pair) == 2 and nv_pair[0].strip():
-                    if len(nv_pair[1]) > 0:
-                        envs[nv_pair[0]] = nv_pair[1]
-                    else:
-                        Operation._log_info(f"Skipping inclusion of environment variable: "
-                                            f"`{nv_pair[0]}` has no value...",
-                                            logger=logger)
-                else:
-                    Operation._log_warning(f"Could not process environment variable entry `{nv}`, skipping...",
-                                           logger=logger)
-        return envs
-
 
 class Pipeline(object):
     """
     Represents a single pipeline constructed in the pipeline editor
     """
 
-    def __init__(self,
-                 id: str,
-                 name: str,
-                 runtime: str,
-                 runtime_config: str,
-                 source: Optional[str] = None,
-                 description: Optional[str] = None):
+    def __init__(
+        self,
+        id: str,
+        name: str,
+        runtime: str,
+        runtime_config: str,
+        source: Optional[str] = None,
+        description: Optional[str] = None,
+        pipeline_parameters: Optional[Dict[str, Any]] = None,
+    ):
         """
         :param id: Generated UUID, 128 bit number used as a unique identifier
-                   e.g. 123e4567-e89b-12d3-a456-426614174000
-        :param name: Pipeline name
-                     e.g. test-pipeline-123456
-        :param runtime: Type of runtime we want to use to execute our pipeline
-                        e.g. kfp OR airflow
+            e.g. 123e4567-e89b-12d3-a456-426614174000
+        :param name: Pipeline name, e.g. test-pipeline-123456
+        :param runtime: Type of runtime we want to use to execute our pipeline, e.g. kfp OR airflow
         :param runtime_config: Runtime configuration that should be used to submit the pipeline to execution
         :param source: The pipeline source, e.g. a pipeline file or a notebook.
-        :description: Pipeline description
+        :param description: Pipeline description
+        :param pipeline_parameters: Key/value pairs representing the parameters of this pipeline
         """
 
         if not name:
-            raise ValueError('Invalid pipeline: Missing pipeline name.')
+            raise ValueError("Invalid pipeline: Missing pipeline name.")
         if not runtime:
-            raise ValueError('Invalid pipeline: Missing runtime.')
+            raise ValueError("Invalid pipeline: Missing runtime.")
         if not runtime_config:
-            raise ValueError('Invalid pipeline: Missing runtime configuration.')
+            raise ValueError("Invalid pipeline: Missing runtime configuration.")
 
         self._id = id
         self._name = name
@@ -361,6 +367,7 @@ class Pipeline(object):
         self._source = source
         self._runtime = runtime
         self._runtime_config = runtime_config
+        self._pipeline_parameters = pipeline_parameters or {}
         self._operations = {}
 
     @property
@@ -390,6 +397,13 @@ class Pipeline(object):
         return self._runtime_config
 
     @property
+    def pipeline_parameters(self) -> Dict[str, Any]:
+        """
+        The dictionary of global parameters associated with each node of the pipeline
+        """
+        return self._pipeline_parameters
+
+    @property
     def operations(self) -> Dict[str, Operation]:
         return self._operations
 
@@ -400,12 +414,67 @@ class Pipeline(object):
         """
         return self._description
 
-    def __eq__(self, other: 'Pipeline') -> bool:
+    def contains_generic_operations(self) -> bool:
+        """
+        Returns a truthy value indicating whether the pipeline contains
+        one or more generic operations.
+        """
+        for op_id, op in self._operations.items():
+            if isinstance(op, GenericOperation):
+                return True
+        return False
+
+    def __eq__(self, other: "Pipeline") -> bool:
         if isinstance(self, other.__class__):
-            return self.id == other.id and \
-                self.name == other.name and \
-                self.source == other.source and \
-                self.description == other.description and \
-                self.runtime == other.runtime and \
-                self.runtime_config == other.runtime_config and \
-                self.operations == other.operations
+            return (
+                self.id == other.id
+                and self.name == other.name
+                and self.source == other.source
+                and self.description == other.description
+                and self.runtime == other.runtime
+                and self.runtime_config == other.runtime_config
+                and self.operations == other.operations
+            )
+
+
+class KeyValueList(list):
+    """
+    A list class that exposes functionality specific to lists whose entries are
+    key-value pairs separated by a pre-defined character.
+    """
+
+    _key_value_separator: str = "="
+
+    def to_dict(self) -> Dict[str, str]:
+        """
+        Properties consisting of key-value pairs are stored in a list of separated
+        strings, while most processing steps require a dictionary - so we must convert.
+        If no key/value pairs are specified, an empty dictionary is returned, otherwise
+        pairs are converted to dictionary entries, stripped of whitespace, and returned.
+        """
+        kv_dict = {}
+        for kv in self:
+            if not kv:
+                continue
+
+            if self._key_value_separator not in kv:
+                raise ValueError(
+                    f"Property {kv} does not contain the expected "
+                    f"separator character: '{self._key_value_separator}'."
+                )
+
+            key, value = kv.split(self._key_value_separator, 1)
+
+            key = key.strip()
+            if not key:
+                # Invalid entry; skip inclusion and continue
+                continue
+
+            if isinstance(value, str):
+                value = value.strip()
+            if not value:
+                # Invalid entry; skip inclusion and continue
+                continue
+
+            kv_dict[key] = value
+        return kv_dict

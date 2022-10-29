@@ -19,12 +19,10 @@ limitations under the License.
 
 The Elyra [JupyterLab extensions](https://jupyterlab.readthedocs.io/en/stable/user/extensions.html) can be installed from PyPI, conda, or from source code.
 
-Note: JupyterLab currently requires a re-build after installing any extension.
-
 ### Prerequisites
 
-* [Node.js 12+](https://nodejs.org/en/)
-* [Python 3.x](https://www.python.org/downloads/)
+* [Node.js 16+](https://nodejs.org/en/)
+* [Python 3.7](https://www.python.org/downloads/) (or later)
 
 JupyterLab dependencies:
  - Elyra >= 2.0.0 requires JupyterLab 3.x
@@ -41,16 +39,14 @@ Prior to version 3.1, the `elyra` package included all dependencies. Subsequent 
 - `elyra[all]` - install core features and all dependencies
 - `elyra[kfp-tekton]` - install the Elyra core features and support for [Kubeflow Pipelines on Tekton](https://github.com/kubeflow/kfp-tekton)
 - `elyra[gitlab]` - install the Elyra core features and GitLab support for Apache Airflow pipelines
-- `elyra[kfp-examples]` - install the Elyra core features and [Kubeflow Pipelines custom component examples](https://github.com/elyra-ai/examples/tree/master/component-catalog-connectors/kfp-example-components-connector)
+- `elyra[kfp-examples]` - install the Elyra core features and [Kubeflow Pipelines custom component examples](https://github.com/elyra-ai/examples/tree/main/component-catalog-connectors/kfp-example-components-connector)
 
 ### pip
-
-**NOTE:** On November 2020, a new version of PIP (20.3) was released with a new, "2020" resolver. This resolver does not yet work with Elyra and might lead to errors in installation. In order to install Elyra, you need to either downgrade pip to version 20.2.4 `pip install --upgrade pip==20.2.4` or, in case you use pip 20.3 (or later), you need to add option `--use-deprecated legacy-resolver` to your pip install command.
 
 If you use `pip`, install Elyra with:
 
 ```bash
-pip3 install --upgrade elyra[all]
+pip3 install --upgrade "elyra[all]"
 ```
 
 If desired, you can install these Elyra extensions independently:
@@ -84,13 +80,19 @@ If desired, you can install these Elyra extensions independently:
    ```bash
    pip3 install --upgrade elyra-r-editor-extension
    ```
+  
+- [Scala Editor](https://pypi.org/project/elyra-scala-editor-extension/)
+
+   ```bash
+   pip3 install --upgrade elyra-scala-editor-extension
+   ```
 
 ### conda
 
 If you use `conda`, install Elyra with:
 
 ```bash
-conda install -c conda-forge elyra[all]
+conda install -c conda-forge "elyra[all]"
 ```
 
 **NOTE:**
@@ -193,6 +195,7 @@ JupyterLab [version]
         @elyra/metadata-extension [version] enabled OK
         @elyra/pipeline-editor-extension [version] enabled OK
         @elyra/python-editor-extension [version] enabled OK
+        @elyra/scala-editor-extension [version] enabled OK
         @elyra/r-editor-extension [version] enabled OK
         @elyra/theme-extension [version] enabled OK
         @jupyterlab/git [version] enabled OK (python, jupyterlab-git)
@@ -207,7 +210,7 @@ If you have Docker installed, you can use JupyterLab and Elyra by running one of
 
  - `elyra/elyra:latest` has the latest released version installed.
  - `elyra/elyra:x.y.z` has version `x.y.z` installed.
- - `elyra/elyra:dev` is automatically re-built each time a change is committed to the master branch.
+ - `elyra/elyra:dev` is automatically re-built each time a change is committed to the main branch.
 
 #### Pulling Elyra container images
 
@@ -225,19 +228,19 @@ docker pull quay.io/elyra/elyra:dev
 
 #### Running Elyra container images
 
-Invocation example 1: Run Elyra v3.3.0 in a Docker container. All changes are discarded when the Docker container is stopped.
+Invocation example 1: Run Elyra v3.4.0 in a Docker container. All changes are discarded when the Docker container is stopped.
 
 ```
-docker run -it -p 8888:8888 elyra/elyra:3.3.0 jupyter lab --debug
+docker run -it -p 8888:8888 elyra/elyra:3.4.0 jupyter lab --debug
 ```
 
-Invocation example 2: Run Elyra v3.3.0 in a Docker container and mount the existing local `$HOME/jupyter-notebooks/` directory as JupyterLab work directory. This enables you to make existing notebooks and other files available in the Docker container. Only files in this working directory are retained when the Docker container is stopped. 
+Invocation example 2: Run Elyra v3.4.0 in a Docker container and mount the existing local `$HOME/jupyter-notebooks/` directory as JupyterLab work directory. This enables you to make existing notebooks and other files available in the Docker container. Only files in this working directory are retained when the Docker container is stopped.
 
 ```
 docker run -it -p 8888:8888\
  -v ${HOME}/jupyter-notebooks/:/home/jovyan/work\
  -w /home/jovyan/work\
- elyra/elyra:3.3.0 jupyter lab --debug
+ elyra/elyra:3.4.0 jupyter lab --debug
 ```
 
 Invocation example 3: Same as above. In addition a local directory named `${HOME}/jupyter-data-dir` is mounted as the Jupyter data directory in the Docker container, storing all user-defined Elyra metadata artifacts you might create, such as code snippets, runtime configurations, or runtime images.
@@ -249,7 +252,7 @@ docker run -it -p 8888:8888\
  -v ${HOME}/jupyter-notebooks/:/home/jovyan/work\
  -w /home/jovyan/work\
  -v ${HOME}/jupyter-data-dir:/home/jovyan/.local/share/jupyter\
- elyra/elyra:3.3.0 jupyter lab --debug
+ elyra/elyra:3.4.0 jupyter lab --debug
 ```
 
 Open the displayed URL in your browser to start using JupyterLab and Elyra.

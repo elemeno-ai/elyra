@@ -15,6 +15,7 @@
 #
 import os
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlparse
 
 import minio
@@ -24,6 +25,11 @@ from traitlets.config import LoggingConfigurable
 
 
 class CosClient(LoggingConfigurable):
+    """
+    MinIO-based Object Storage client, enabling Elyra to upload and download
+    files.This client is configurable via traitlets.
+    """
+
     client = None
 
     def __init__(self, config=None, endpoint=None, access_key=None, secret_key=None, bucket=None, **kwargs):
@@ -35,12 +41,16 @@ class CosClient(LoggingConfigurable):
             # runtime configurations.
             if access_key is None or secret_key is None:
                 # use env variables for authentication
-                if len(os.environ.get('AWS_ACCESS_KEY_ID', '').strip()) == 0 or\
-                   len(os.environ.get('AWS_SECRET_ACCESS_KEY', '').strip()) == 0:
-                    raise RuntimeError('Cannot connect to object storage. No credentials '
-                                       ' were provided and environment variables '
-                                       ' AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are not '
-                                       ' properly defined.')
+                if (
+                    len(os.environ.get("AWS_ACCESS_KEY_ID", "").strip()) == 0
+                    or len(os.environ.get("AWS_SECRET_ACCESS_KEY", "").strip()) == 0
+                ):
+                    raise RuntimeError(
+                        "Cannot connect to object storage. No credentials "
+                        " were provided and environment variables "
+                        " AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are not "
+                        " properly defined."
+                    )
                 else:
                     cred_provider = providers.EnvAWSProvider()
             else:
@@ -52,39 +62,39 @@ class CosClient(LoggingConfigurable):
             self.endpoint = endpoint
             self.bucket = bucket
         else:
-            auth_type = config.metadata['cos_auth_type']
-            self.endpoint = urlparse(config.metadata['cos_endpoint'])
-            self.bucket = config.metadata['cos_bucket']
-            if auth_type in ['USER_CREDENTIALS', 'KUBERNETES_SECRET']:
+            auth_type = config.metadata["cos_auth_type"]
+            self.endpoint = urlparse(config.metadata["cos_endpoint"])
+            self.bucket = config.metadata["cos_bucket"]
+            if auth_type in ["USER_CREDENTIALS", "KUBERNETES_SECRET"]:
                 cred_provider = providers.StaticProvider(
-                    access_key=config.metadata['cos_username'],
-                    secret_key=config.metadata['cos_password'],
+                    access_key=config.metadata["cos_username"],
+                    secret_key=config.metadata["cos_password"],
                 )
-            elif auth_type == 'AWS_IAM_ROLES_FOR_SERVICE_ACCOUNTS':
-                if os.environ.get('AWS_ROLE_ARN') is None or\
-                   os.environ.get('AWS_WEB_IDENTITY_TOKEN_FILE') is None:
-                    raise RuntimeError('Cannot connect to object storage. '
-                                       f'Authentication provider \'{auth_type}\' requires '
-                                       'environment variables AWS_ROLE_ARN and AWS_IAM_ROLES_FOR_SERVICE_ACCOUNTS.')
+            elif auth_type == "AWS_IAM_ROLES_FOR_SERVICE_ACCOUNTS":
+                if os.environ.get("AWS_ROLE_ARN") is None or os.environ.get("AWS_WEB_IDENTITY_TOKEN_FILE") is None:
+                    raise RuntimeError(
+                        "Cannot connect to object storage. "
+                        f"Authentication provider '{auth_type}' requires "
+                        "environment variables AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN_FILE."
+                    )
                 # Verify that AWS_WEB_IDENTITY_TOKEN_FILE exists
-                if Path(os.environ['AWS_WEB_IDENTITY_TOKEN_FILE']).is_file() is False:
-                    raise RuntimeError('Cannot connect to object storage. The value of environment '
-                                       'variable AWS_IAM_ROLES_FOR_SERVICE_ACCOUNTS references '
-                                       f"'{os.environ['AWS_WEB_IDENTITY_TOKEN_FILE']}', which is not a valid file.")
+                if Path(os.environ["AWS_WEB_IDENTITY_TOKEN_FILE"]).is_file() is False:
+                    raise RuntimeError(
+                        "Cannot connect to object storage. The value of environment "
+                        "variable AWS_WEB_IDENTITY_TOKEN_FILE references "
+                        f"'{os.environ['AWS_WEB_IDENTITY_TOKEN_FILE']}', which is not a valid file."
+                    )
                 cred_provider = providers.IamAwsProvider()
             else:
-                raise RuntimeError('Cannot connect to object storage. '
-                                   f'Authentication provider \'{auth_type}\' is not supported.')
+                raise RuntimeError(
+                    "Cannot connect to object storage. " f"Authentication provider '{auth_type}' is not supported."
+                )
 
         # Infer secure from the endpoint's scheme.
-        self.secure = self.endpoint.scheme == 'https'
+        self.secure = self.endpoint.scheme == "https"
 
         # get minio client
-        self.client = minio.Minio(
-            self.endpoint.netloc,
-            secure=self.secure,
-            credentials=cred_provider
-        )
+        self.client = minio.Minio(self.endpoint.netloc, secure=self.secure, credentials=cred_provider)
 
         # Make a bucket with the make_bucket API call.
         try:
@@ -109,63 +119,66 @@ class CosClient(LoggingConfigurable):
         except ValueError as ex:
             # providers.IamAwsProvider raises this if something bad happened
             if isinstance(cred_provider, providers.IamAwsProvider):
-                raise RuntimeError(f'Cannot connect to object storage: {ex}. Verify that '
-                                   f'environment variable AWS_WEB_IDENTITY_TOKEN_FILE contains a valid value.')
+                raise RuntimeError(
+                    f"Cannot connect to object storage: {ex}. Verify that "
+                    f"environment variable AWS_WEB_IDENTITY_TOKEN_FILE contains a valid value."
+                )
             else:
                 raise ex
 
-    def upload_file(self, file_name, file_path):
+    def upload_file(self, local_file_path: str, object_name: str, object_prefix: str = "") -> str:
         """
-        Uploads contents from a file, located on the local filesystem at `file_path`,
-        as `file_name` in object storage.
-        :param file_name: Name of the file object in object storage
-        :param file_path: Path on the local filesystem from which object data will be read.
-        :return:
+        Uploads contents from a file, located on the local filesystem at `local_file_path`,
+        as `object_name` in object storage.
+        :param local_file_path: Path on the local filesystem from which object data will be read.
+        :param object_name: Name of the file object in object storage
+        :param prefix: optional prefix to be applied to object_name
+        :return: fully qualified object name, if upload was successful
         """
+
+        fq_object_name = join_paths(object_prefix, object_name)
 
         try:
-            self.client.fput_object(bucket_name=self.bucket,
-                                    object_name=file_name,
-                                    file_path=file_path)
+            # upload local_file_path as object_name
+            self.client.fput_object(bucket_name=self.bucket, object_name=fq_object_name, file_path=local_file_path)
         except BaseException as ex:
-            self.log.error('Error uploading file {} to bucket {}'.format(file_path, self.bucket), exc_info=True)
+            self.log.error(
+                f"Error uploading file '{local_file_path}' to bucket '{self.bucket}' as '{fq_object_name}'",
+                exc_info=True,
+            )
             raise ex from ex
 
-    def upload_file_to_dir(self, dir, file_name, file_path):
-        """
-        Uploads contents from a file, located on the local filesystem at `file_path`,
-        as `file_name` in object storage.
-        :param dir: the directory where the file should be uploaded to
-        :param file_name: Name of the file object in object storage
-        :param file_path: Path on the local filesystem from which object data will be read.
-        :return:
-        """
-        # elyra-320 -> always use posix path as this is targeting COS filesystem
-        location = Path(os.path.join(dir, file_name))
-        self.upload_file(location.as_posix(), file_path)
+        return fq_object_name
 
-    def download_file(self, file_name, file_path):
+    def download_file(self, object_name: str, local_file_path: str) -> None:
         """
         Downloads and saves the object as a file in the local filesystem.
-        :param file_name: Name of the file object in object storage
-        :param file_path: Path on the local filesystem to which the object data will be written.
+        :param object_name: Name of the file object in object storage
+        :param local_file_path: Path on the local filesystem to which the object data will be written.
         :return:
         """
+        # sanitize object name; S3 does not accept leading /
+        fq_object_name = join_paths(object_name)
         try:
-            self.client.fget_object(bucket_name=self.bucket,
-                                    object_name=file_name,
-                                    file_path=file_path)
+            self.client.fget_object(bucket_name=self.bucket, object_name=fq_object_name, file_path=local_file_path)
         except BaseException as ex:
-            self.log.error('Error reading file {} from bucket {}'.format(file_name, self.bucket), exc_info=True)
+            self.log.error(
+                f"Error downloading '{fq_object_name}' from bucket '{self.bucket}' to '{local_file_path}'",
+                exc_info=True,
+            )
             raise ex from ex
 
-    def download_file_from_dir(self, dir, file_name, file_path):
-        """
-        Downloads and saves the object as a file in the local filesystem.
-        :param dir: the directory where the file is located
-        :param file_name: Name of the file object in object storage
-        :param file_path: Path on the local filesystem to which the object data will be written.
-        :return:
-        """
 
-        self.download_file(os.path.join(dir, file_name), file_path)
+def join_paths(path1: Optional[str] = "", path2: Optional[str] = "") -> str:
+    """
+    Joins path1 and path2, returning a valid object storage path string.
+    Example: "/p1/p2" + "p3" -> "p1/p2/p3"
+    """
+    path1 = path1 or ""
+    path2 = path2 or ""
+    # combine paths and ensure the resulting path does not start with "/" char and
+    path = f"{path1.rstrip('/')}/{path2}".lstrip("/")
+    if len(path) > 0:
+        # convert to Posix
+        return Path(path).as_posix()
+    return path

@@ -14,22 +14,22 @@
  * limitations under the License.
  */
 
-import { elyraIcon, helpIcon } from '@elyra/ui-components';
+import { elyraIcon, helpIcon, whatsNewIcon } from '@elyra/ui-components';
 import {
   ILabShell,
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
 import { ICommandPalette, MainAreaWidget } from '@jupyterlab/apputils';
-import { ILauncher, LauncherModel } from '@jupyterlab/launcher';
+import { ILauncher } from '@jupyterlab/launcher';
 import { IMainMenu } from '@jupyterlab/mainmenu';
 import { ITranslator } from '@jupyterlab/translation';
 import { launcherIcon } from '@jupyterlab/ui-components';
 
 import { toArray } from '@lumino/algorithm';
-import { Widget } from '@lumino/widgets';
+import { DockPanel, TabBar, Widget } from '@lumino/widgets';
 
-import { Launcher } from './launcher';
+import { Launcher, LauncherModel } from './launcher';
 import '../style/index.css';
 
 const ELYRA_THEME_NAMESPACE = 'elyra-theme-extension';
@@ -39,7 +39,8 @@ const ELYRA_THEME_NAMESPACE = 'elyra-theme-extension';
  */
 const CommandIDs = {
   create: 'launcher:create',
-  openHelp: 'elyra:open-help'
+  openHelp: 'elyra:open-help',
+  releases: 'elyra:releases'
 };
 
 /**
@@ -80,7 +81,7 @@ const extension: JupyterFrontEndPlugin<ILauncher> = {
     }
 
     // Use custom Elyra launcher
-    const { commands } = app;
+    const { commands, shell } = app;
     const trans = translator.load('jupyterlab');
     const model = new LauncherModel();
 
@@ -111,7 +112,10 @@ const extension: JupyterFrontEndPlugin<ILauncher> = {
         main.title.closable = !!toArray(labShell.widgets('main')).length;
         main.id = id;
 
-        labShell.add(main, 'main', { activate: args['activate'] as boolean });
+        shell.add(main, 'main', {
+          activate: args['activate'] as boolean,
+          ref: args['ref'] as string
+        });
 
         labShell.layoutModified.connect(() => {
           // If there is only a launcher open, remove the close icon.
@@ -129,11 +133,42 @@ const extension: JupyterFrontEndPlugin<ILauncher> = {
       });
     }
 
+    if (labShell) {
+      labShell.addButtonEnabled = true;
+      labShell.addRequested.connect(
+        (sender: DockPanel, arg: TabBar<Widget>) => {
+          // Get the ref for the current tab of the tabbar which the add button was clicked
+          const ref =
+            arg.currentTitle?.owner.id ||
+            arg.titles[arg.titles.length - 1].owner.id;
+          if (commands.hasCommand('filebrowser:create-main-launcher')) {
+            // If a file browser is defined connect the launcher to it
+            return commands.execute('filebrowser:create-main-launcher', {
+              ref
+            });
+          }
+          return commands.execute(CommandIDs.create, { ref });
+        }
+      );
+    }
+
     commands.addCommand(CommandIDs.openHelp, {
       label: 'Documentation',
       icon: helpIcon,
       execute: (args: any) => {
-        window.open('https://elyra.readthedocs.io/en/v3.7.0/', '_blank');
+        window.open('https://elyra.readthedocs.io/en/v3.12.0/', '_blank');
+      }
+    });
+
+    commands.addCommand(CommandIDs.releases, {
+      label: "What's new in v3.12.0",
+      caption: "What's new in this release",
+      icon: whatsNewIcon,
+      execute: (args: any) => {
+        window.open(
+          'https://github.com/elyra-ai/elyra/releases/v3.12.0/',
+          '_blank'
+        );
       }
     });
 
@@ -141,6 +176,12 @@ const extension: JupyterFrontEndPlugin<ILauncher> = {
       command: CommandIDs.openHelp,
       category: 'Elyra',
       rank: 10
+    });
+
+    model.add({
+      command: CommandIDs.releases,
+      category: 'Elyra',
+      rank: 11
     });
 
     return model;

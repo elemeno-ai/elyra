@@ -1,6 +1,6 @@
 {
-  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/meta-schema.json",
-  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/url-catalog.json",
+  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/meta-schema.json",
+  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/url-catalog.json",
   "title": "URL Component Catalog",
   "name": "url-catalog",
   "display_name": "URL Component Catalog",
@@ -9,7 +9,7 @@
   "metadata_class_name": "elyra.pipeline.component_metadata.UrlCatalogMetadata",
   "uihints": {
     "icon": "",
-    "reference_url": "https://elyra.readthedocs.io/en/stable/user_guide/pipeline-components.html"
+    "reference_url": "https://elyra.readthedocs.io/en/v3.12.0/user_guide/pipeline-components.html#url-component-catalog"
   },
   "properties": {
     "schema_name": {
@@ -39,7 +39,6 @@
           "type": "string",
           "enum": ["KUBEFLOW_PIPELINES", "APACHE_AIRFLOW"],
           "uihints": {
-            "field_type": "dropdown",
             "category": "Runtime"
           }
         },
@@ -52,7 +51,6 @@
             "maxLength": 18
           },
           "uihints": {
-            "field_type": "array",
             "category": "Component Categories"
           }
         },
@@ -65,8 +63,29 @@
             "format": "uri"
           },
           "uihints": {
-            "field_type": "array",
-            "category": "Configuration"
+            "category": "Configuration",
+            "items": {
+              "ui:placeholder": "https://host:port/path/component_file"
+            }
+          }
+        },
+        "auth_id": {
+          "title": "User Id",
+          "description": "User id that has read access for the specified URL resources",
+          "type": "string",
+          "minLength": 1,
+          "uihints": {
+            "category": "Source credentials"
+          }
+        },
+        "auth_password": {
+          "title": "Password",
+          "description": "Password or API key for the specified user id",
+          "type": "string",
+          "minLength": 1,
+          "uihints": {
+            "ui:field": "password",
+            "category": "Source credentials"
           }
         }
       },

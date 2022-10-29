@@ -1,6 +1,6 @@
 {
-  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/meta-schema.json",
-  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/pipeline/airflow/package_catalog_connector/airflow-package-catalog.json",
+  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/meta-schema.json",
+  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/pipeline/airflow/package_catalog_connector/airflow-package-catalog.json",
   "title": "Apache Airflow package operator catalog",
   "name": "airflow-package-catalog",
   "schemaspace": "component-catalogs",
@@ -9,7 +9,7 @@
   "uihints": {
     "title": "Apache Airflow core operator catalog",
     "icon": "",
-    "reference_url": "https://github.com/elyra-ai/elyra/tree/master/elyra/pipeline/airflow/package_catalog_connector"
+    "reference_url": "https://github.com/elyra-ai/elyra/tree/main/elyra/pipeline/airflow/package_catalog_connector"
   },
   "properties": {
     "schema_name": {
@@ -39,10 +39,7 @@
           "description": "List of runtime types this catalog supports",
           "type": "string",
           "enum": ["APACHE_AIRFLOW"],
-          "default": "APACHE_AIRFLOW",
-          "uihints": {
-            "field_type": "dropdown"
-          }
+          "default": "APACHE_AIRFLOW"
         },
         "categories": {
           "title": "Category Names",
@@ -54,16 +51,44 @@
           },
           "default": ["Core packages"],
           "uihints": {
-            "field_type": "array",
             "category": "Component Categories"
           }
         },
         "airflow_package_download_url": {
           "title": "Airflow package download URL",
-          "description": "URL where the Apache Airflow package wheel can be downloaded.",
+          "description": "URL where the Apache Airflow package wheel can be downloaded",
           "type": "string",
+          "format": "uri",
+          "uihints": {
+            "category": "Source",
+            "ui:placeholder": "https://host:port/path/apache_airflow.whl"
+          }
+        },
+        "search_contrib": {
+          "title": "Include operators in contrib package",
+          "description": "Include operators in package airflow.contrib.operators",
+          "type": "boolean",
           "uihints": {
             "category": "Source"
+          }
+        },
+        "auth_id": {
+          "title": "User Id",
+          "description": "User id that has read access for the specified URL resource",
+          "type": "string",
+          "minLength": 1,
+          "uihints": {
+            "category": "Source credentials"
+          }
+        },
+        "auth_password": {
+          "title": "Password",
+          "description": "Password or API key for the specified user id",
+          "type": "string",
+          "minLength": 1,
+          "uihints": {
+            "ui:field": "password",
+            "category": "Source credentials"
           }
         }
       },

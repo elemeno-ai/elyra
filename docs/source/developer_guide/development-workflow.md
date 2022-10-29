@@ -21,21 +21,22 @@ This section describes the steps necessary to build Elyra in a development envir
 #### Requirements
 
 * [Python 3 Miniconda](https://docs.conda.io/en/latest/miniconda.html)
-* [NodeJS 12+](https://nodejs.org/en/)
+* [Node.js 16+](https://nodejs.org/en/)
 * [Yarn](https://yarnpkg.com/lang/en/docs/install)
+* [GNU Make](https://www.gnu.org/software/make/)
 
 ### Setting up your development environment
 
 * Install Miniconda
 Download and install a [Python 3 version of Miniconda](https://docs.conda.io/en/latest/miniconda.html) according to your Operating System
 
-* Create a new Python environment
+* Create a new Python environment using a version that is [supported by Elyra](../getting_started/installation.html#prerequisites).
 
     ```
     conda create -n <env-name> python
     ```
 
-    The python version of your environment will match the miniconda version you installed. You can override the default by explicitly setting `python=3.7`, for example.
+    The Python version of your environment will match the miniconda version you installed. You can override the default by explicitly setting `python=3.10`, for example.
 
 * Activate the new environment
 
@@ -46,18 +47,23 @@ Download and install a [Python 3 version of Miniconda](https://docs.conda.io/en/
 * Verify your miniconda environment
 
     ```
-    python --version
-    which python # Displays current python path
-    pip3 --version
-    which pip3
+    python --version # should yield a version that is supported by Elyra
+    which python     # displays current `python` path
+    pip3 --version   # should be a recent version to avoid build issues
+    which pip3       # displays current `pip` path
     ```
     Python path must be under miniconda envs folder.
     Confirm pip3 location matches where miniconda is installed.
 
-* Install NodeJS
+* Install a version of Node.js that is [supported by Elyra](../getting_started/installation.html#prerequisites).
 
     ```
     conda install -y -c conda-forge/label/main nodejs
+    ```
+* Verify node is installed correctly 
+
+    ```
+    node --version 
     ```
 
 * Install Yarn
@@ -65,6 +71,23 @@ Download and install a [Python 3 version of Miniconda](https://docs.conda.io/en/
     ```
     conda install -y -c conda-forge/label/main yarn
     ```
+* Verify yarn is installed correctly 
+
+    ```
+    yarn --version 
+    ```
+
+* Install GNU Make 
+
+    Refer to the following link for installation instructions: 
+    [GNU Make](https://www.gnu.org/software/make/)
+
+    To verify the installation, run `make`. 
+    If you have yet to [set up the repository](#setting-up-your-development-environment), you should see a message like the following:
+    ```
+    make: *** No targets specified and no makefile found.  Stop.
+    ```
+    Once the repository is set up, running `make` from that location should display the available tasks that are listed in the [Build & Installation](#build-installation) section below.
 
 ### Setting up your Elyra Github repository
 
@@ -134,7 +157,7 @@ To specify a JupyterLab version to be installed:
 
 You can install Elyra using a local build of @elyra/pipeline-editor with:
 ```bash
-make clean dev-link install
+make clean install-dev
 ```
 
 ### Back-end Development
@@ -172,19 +195,77 @@ not just refresh your browser.
 
 ### Building the Elyra Container Image
 
-Elyra's container image can be built using:
+Elyra's container image can be built in two ways (production and development):
 
+Development:
 ```bash
 make elyra-image
 ```
+By default, the command above will build a container image (development) with the changes that exist in your local branch.
 
-By default, the command above will build a container image from the tip of the repository master branch.
 
-In order to build from a particular release, you can pass a `TAG` parameter to the make command as below:
-
+Production:  
+From main branch:
 ```bash
-make elyra-image TAG=2.2.1
+make elyra-image TAG=3.7.0
 ```
+or after checking out a git tag e.g. `git checkout tags/v3.7.0`
+```bash
+make elyra-image 
+```
+In order to build from a particular release (production), you can pass a `TAG` parameter to the make command
+or you can checkout the respective tagged release and omit the `TAG` parameter.
 
 Official container images are published on [Docker Hub](https://hub.docker.com/r/elyra/elyra/tags)
 and [quay.io](https://quay.io/repository/elyra/elyra?tab=tags).
+
+### Developing Elyra against the Jupyterlab source repo
+
+Sometimes it is useful to develop Elyra against a local build of Jupyterlab. To use a local build of Jupyterlab use the
+following steps in the same python environment.
+
+1. Uninstall any pip installations of Jupyterlab. You can use `etc/scripts/clean-jupyterlab.sh --version dev` as
+   mentioned above with `--version dev` to not reinstall Jupyterlab at the end of the script.
+
+2. Build your local repo of Jupyterlab, step-by-step instructions can be found in the
+   [Jupyterlab documentation](https://jupyterlab.readthedocs.io/en/latest/developer/contributing.html#installing-jupyterlab).
+   Uninstalling in the previous step will also wipe any previous installations of a local build.
+
+3. `cd` to the `builder/` directory in your Jupyterlab repo and run `yarn link`. The Elyra `Makefile` will use this yarn
+   link in step 6.
+
+4. In your Elyra repo, uncomment the following line in `tsconfig.base.json` to tell Typescript to use the local
+   Jupyterlab packages when building:
+
+    ```"paths": { "@jupyterlab/*": ["../jupyterlab/packages/*"] },```
+
+5. Comment out `jupyterlab` and `jupyterlab-lsp` in the `install_requires` section of `setup.py` in your Elyra repo.
+   This will prevent Jupyterlab from being pip installed during the Elyra build.
+   Note: `jupyterlab-lsp` also pip installs Jupyterlab when installed
+
+6. Run `make install-dev` to install Elyra using the linked `@jupyterlab/builder` from step 3.
+
+7. You can now start Jupyterlab by running `jupyter lab --dev-mode --extensions-in-dev-mode`, this will automatically
+   watch for changes in the Jupyterlab repo. To also watch for changes in Elyra run `make watch` in a separate terminal
+   in the same Python environment.
+
+When you want to switch back to developing Elyra against a Jupyterlab release, you just have to undo the comments in
+steps 4 and 5 and rebuild with `make clean install`
+
+## Analyzing automated test failures
+
+The Elyra GitHub repository is configured to run automated tests whenever a pull request is opened. These tests include static [code quality analysis](https://github.com/elyra-ai/elyra/blob/main/.github/workflows/codeql-analysis.yml) and [UI, server, and integration tests](https://github.com/elyra-ai/elyra/blob/main/.github/workflows/build.yml).
+
+The test results can be accessed from the pull request or the _actions_ tab. If the test log does not include enough details to diagnose failures, download and review test artifacts that might have been generated.
+
+### Accessing test artifacts
+
+1. Open the [Elyra repository actions panel](https://github.com/elyra-ai/elyra/actions) (`https://github.com/elyra-ai/elyra/actions`).
+1. Locate the failing workflow.
+  ![Locate failing workflow](../images/developer_guide/development-workflow/locate-failed-workflow.png)
+1. Open the workflow.
+1. Click the 'home' (summary) button.
+  ![Open workflow summary](../images/developer_guide/development-workflow/open-workflow-summary.png)
+1. Locate the 'Artifacts' section. If present, it should contain a download link.
+  ![Locate artifacts](../images/developer_guide/development-workflow/locate-artifacts.png)
+1. Download the archive, extract it, and review the artifacts. 

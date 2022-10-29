@@ -1,6 +1,6 @@
 {
-  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/meta-schema.json",
-  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/code-snippet.json",
+  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/meta-schema.json",
+  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/code-snippet.json",
   "title": "Code Snippet",
   "name": "code-snippet",
   "schemaspace": "code-snippets",
@@ -8,7 +8,7 @@
   "uihints": {
     "title": "Code Snippets",
     "icon": "elyra:code-snippet",
-    "reference_url": "https://elyra.readthedocs.io/en/latest/user_guide/code-snippets.html"
+    "reference_url": "https://elyra.readthedocs.io/en/v3.12.0/user_guide/code-snippets.html"
   },
   "properties": {
     "schema_name": {
@@ -36,8 +36,13 @@
           "title": "Tags",
           "description": "Tags for categorizing snippets",
           "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "minLength": 1,
+            "pattern": "^[^ \t]+([ \t]+[^ \t]+)*$"
+          },
           "uihints": {
-            "field_type": "tags"
+            "ui:field": "tags"
           }
         },
         "language": {
@@ -45,7 +50,7 @@
           "description": "Code snippet implementation language",
           "type": "string",
           "uihints": {
-            "field_type": "dropdown",
+            "ui:field": "dropdown",
             "default_choices": ["Python", "Java", "R", "Scala", "Markdown"],
             "category": "Source"
           },
@@ -55,8 +60,11 @@
           "title": "Code",
           "description": "Code snippet code lines",
           "type": "array",
+          "items": {
+            "type": "string"
+          },
           "uihints": {
-            "field_type": "code",
+            "ui:field": "code",
             "category": "Source"
           }
         }

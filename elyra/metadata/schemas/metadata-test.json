@@ -1,6 +1,6 @@
 {
-  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/meta-schema.json",
-  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/metadata-test.json",
+  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/meta-schema.json",
+  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/metadata-test.json",
   "title": "Metadata Test",
   "name": "metadata-test",
   "schemaspace": "metadata-tests",
@@ -80,13 +80,23 @@
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9-.]*[a-z0-9]$"
         },
+        "string_complex_test": {
+          "title": "String Complex Test",
+          "description": "Property used to test strings with multiple restrictions",
+          "type": "string",
+          "allOf": [
+            { "minLength": 1 },
+            { "pattern": "^[^ \t]+" },
+            { "pattern": "[^ \t]+$" }
+          ]
+        },
         "enum_test": {
           "title": "Enum Test",
           "description": "Property used to test properties with enums",
           "type": "string",
           "enum": ["elyra", "rocks"],
           "uihints": {
-            "field_type": "dropdown",
+            "ui:field": "dropdown",
             "default_choices": ["elyra"]
           }
         },
@@ -98,7 +108,7 @@
           "maxItems": 10,
           "uniqueItems": true,
           "uihints": {
-            "field_type": "code"
+            "ui:field": "code"
           }
         },
         "object_test": {

@@ -1,6 +1,6 @@
 {
-  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/meta-schema.json",
-  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/runtime-image.json",
+  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/meta-schema.json",
+  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/runtime-image.json",
   "title": "Runtime Image",
   "name": "runtime-image",
   "schemaspace": "runtime-images",
@@ -8,7 +8,7 @@
   "uihints": {
     "icon": "elyra:container",
     "title": "Runtime Images",
-    "reference_url": "https://elyra.readthedocs.io/en/latest/user_guide/runtime-image-conf.html"
+    "reference_url": "https://elyra.readthedocs.io/en/v3.12.0/user_guide/runtime-image-conf.html"
   },
   "properties": {
     "schema_name": {
@@ -35,9 +35,14 @@
         "tags": {
           "title": "Tags",
           "description": "Tags for categorizing runtime images",
+          "uniqueItems": true,
           "type": "array",
+          "items": {
+            "minLength": 1,
+            "pattern": "^[^ \t]+([ \t]+[^ \t]+)*$"
+          },
           "uihints": {
-            "field_type": "tags"
+            "ui:field": "tags"
           }
         },
         "image_name": {
@@ -46,7 +51,7 @@
           "type": "string",
           "minLength": 1,
           "uihints": {
-            "placeholder": "registry/owner/image:tag",
+            "ui:placeholder": "registry/owner/image:tag",
             "category": "Source"
           }
         },
@@ -56,7 +61,6 @@
           "type": "string",
           "enum": ["Always", "IfNotPresent", "Never"],
           "uihints": {
-            "field_type": "dropdown",
             "category": "Source"
           }
         },
@@ -68,7 +72,7 @@
           "maxLength": 253,
           "uihints": {
             "category": "Source",
-            "secure": true
+            "ui:field": "password"
           }
         }
       },

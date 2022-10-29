@@ -1,6 +1,6 @@
 {
-  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/meta-schema.json",
-  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/master/elyra/metadata/schemas/metadata-test2.json",
+  "$schema": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/meta-schema.json",
+  "$id": "https://raw.githubusercontent.com/elyra-ai/elyra/main/elyra/metadata/schemas/metadata-test2.json",
   "title": "Metadata Test2",
   "name": "metadata-test2",
   "schemaspace": "metadata-tests",
@@ -86,7 +86,7 @@
           "type": "string",
           "enum": ["elyra", "rocks"],
           "uihints": {
-            "field_type": "dropdown",
+            "ui:field": "dropdown",
             "default_choices": ["elyra"]
           }
         },
@@ -98,7 +98,7 @@
           "maxItems": 10,
           "uniqueItems": true,
           "uihints": {
-            "field_type": "code"
+            "ui:field": "code"
           }
         },
         "object_test": {

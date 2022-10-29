@@ -27,12 +27,15 @@ import helpIconSvg from '../style/icons/help.svg';
 import importSvg from '../style/icons/import.svg';
 import pipelineComponentSvg from '../style/icons/pipeline-components.svg';
 import pipelineSvg from '../style/icons/pipeline-flow.svg';
-import pyIconSvg from '../style/icons/py-logo.svg';
 import rIconSvg from '../style/icons/r-logo.svg';
 import runtimesSvg from '../style/icons/runtimes.svg';
 import savePipelineSvg from '../style/icons/save-pipeline.svg';
+import scalaIconSvg from '../style/icons/scala-logo.svg';
 import tagIconSvg from '../style/icons/tag.svg';
 import trashIconSvg from '../style/icons/trashIcon.svg';
+import viewOffIconSvg from '../style/icons/view--off.svg';
+import viewIconSvg from '../style/icons/view.svg';
+import whatsNewSvg from '../style/icons/whats-new.svg';
 
 export const importIcon = new LabIcon({
   name: 'elyra:import',
@@ -95,9 +98,21 @@ export const rIcon = new LabIcon({
   name: 'elyra:rIcon',
   svgstr: rIconSvg
 });
-export const pyIcon = new LabIcon({
-  name: 'elyra:pyIcon',
-  svgstr: pyIconSvg
+export const scalaIcon = new LabIcon({
+  name: 'elyra:scalaIcon',
+  svgstr: scalaIconSvg
+});
+export const viewIcon = new LabIcon({
+  name: 'elyra:view',
+  svgstr: viewIconSvg
+});
+export const viewOffIcon = new LabIcon({
+  name: 'elyra:viewOff',
+  svgstr: viewOffIconSvg
+});
+export const whatsNewIcon = new LabIcon({
+  name: 'elyra:whats-new',
+  svgstr: whatsNewSvg
 });
 
 /**

@@ -67,13 +67,11 @@ import {
 } from './EmptyPipelineContent';
 import { formDialogWidget } from './formDialogWidget';
 import {
-  componentFetcher,
   usePalette,
   useRuntimeImages,
   useRuntimesSchema
 } from './pipeline-hooks';
 import { PipelineExportDialog } from './PipelineExportDialog';
-import pipelineProperties from './pipelineProperties';
 import {
   PipelineService,
   RUNTIMES_SCHEMASPACE,
@@ -269,18 +267,6 @@ const PipelineWrapper: React.FC<IProps> = ({
       const nodes = pipelineJson?.pipelines?.[0]?.nodes;
       if (nodes?.length > 0) {
         for (const node of nodes) {
-          if (node?.app_data?.component_parameters?.runtime_image) {
-            const image = runtimeImages?.find(
-              i =>
-                i.metadata.image_name ===
-                node.app_data.component_parameters.runtime_image
-            );
-            if (image) {
-              node.app_data.component_parameters.runtime_image =
-                image.display_name;
-            }
-          }
-
           if (node?.app_data?.component_parameters) {
             for (const [key, val] of Object.entries(
               node?.app_data?.component_parameters
@@ -315,38 +301,50 @@ const PipelineWrapper: React.FC<IProps> = ({
     return (): void => {
       currentContext.model.contentChanged.disconnect(changeHandler);
     };
-  }, [runtimeImages, runtimeDisplayName]);
+  }, [runtimeDisplayName]);
 
-  const onChange = useCallback(
-    (pipelineJson: any): void => {
-      if (contextRef.current.isReady) {
-        if (pipelineJson?.pipelines?.[0]?.nodes) {
-          // map display names to IDs
-          const nodes = pipelineJson?.pipelines?.[0]?.nodes;
-          if (nodes?.length > 0) {
-            for (const node of nodes) {
-              if (node?.app_data?.component_parameters?.runtime_image) {
-                const image = runtimeImages?.find(
-                  i =>
-                    i.display_name ===
-                    node.app_data.component_parameters.runtime_image
-                );
-                if (image) {
-                  node.app_data.component_parameters.runtime_image =
-                    image.metadata.image_name;
-                }
+  const onChange = useCallback((pipelineJson: any): void => {
+    const removeNullValues = (data: any, removeEmptyString?: boolean): void => {
+      for (const key in data) {
+        if (
+          data[key] === null ||
+          data[key] === undefined ||
+          (removeEmptyString && data[key] === '')
+        ) {
+          delete data[key];
+        } else if (Array.isArray(data[key])) {
+          const newArray = [];
+          for (const i in data[key]) {
+            if (typeof data[key][i] === 'object') {
+              removeNullValues(data[key][i], true);
+              if (Object.keys(data[key][i]).length > 0) {
+                newArray.push(data[key][i]);
               }
+            } else if (data[key][i] !== null && data[key][i] !== '') {
+              newArray.push(data[key][i]);
             }
           }
+          data[key] = newArray;
+        } else if (typeof data[key] === 'object') {
+          removeNullValues(data[key]);
         }
-
-        contextRef.current.model.fromString(
-          JSON.stringify(pipelineJson, null, 2)
-        );
       }
-    },
-    [runtimeImages]
-  );
+    };
+
+    // Remove all null values from the pipeline
+    for (const node of pipelineJson?.pipelines?.[0]?.nodes ?? []) {
+      removeNullValues(node.app_data ?? {});
+    }
+    removeNullValues(
+      pipelineJson?.pipelines?.[0]?.app_data?.properties?.pipeline_defaults ??
+        {}
+    );
+    if (contextRef.current.isReady) {
+      contextRef.current.model.fromString(
+        JSON.stringify(pipelineJson, null, 2)
+      );
+    }
+  }, []);
 
   const isDialogAlreadyShowing = useRef(false);
   const onError = useCallback(
@@ -379,28 +377,19 @@ const PipelineWrapper: React.FC<IProps> = ({
           if (result.button.accept) {
             // proceed with migration
             console.log('migrating pipeline');
-            let migrationPalette = palette;
             const pipelineJSON: any = contextRef.current.model.toJSON();
-            const oldRuntime = pipelineJSON?.pipelines[0].app_data.runtime;
-            if (oldRuntime === 'kfp' || oldRuntime === 'airflow') {
-              migrationPalette = await componentFetcher(oldRuntime);
-            }
             try {
-              const migratedPipeline = migrate(
-                pipelineJSON,
-                migrationPalette,
-                pipeline => {
-                  // function for updating to relative paths in v2
-                  // uses location of filename as expected in v1
-                  for (const node of pipeline.nodes) {
-                    node.app_data.filename = PipelineService.getPipelineRelativeNodePath(
-                      contextRef.current.path,
-                      node.app_data.filename
-                    );
-                  }
-                  return pipeline;
+              const migratedPipeline = migrate(pipelineJSON, pipeline => {
+                // function for updating to relative paths in v2
+                // uses location of filename as expected in v1
+                for (const node of pipeline.nodes) {
+                  node.app_data.filename = PipelineService.getPipelineRelativeNodePath(
+                    contextRef.current.path,
+                    node.app_data.filename
+                  );
                 }
-              );
+                return pipeline;
+              });
               contextRef.current.model.fromString(
                 JSON.stringify(migratedPipeline, null, 2)
               );
@@ -416,7 +405,7 @@ const PipelineWrapper: React.FC<IProps> = ({
                       enabled in your environment. Complete the setup
                       instructions in{' '}
                       <a
-                        href="https://elyra.readthedocs.io/en/v3.7.0rc0/user_guide/pipeline-components.html#example-custom-components"
+                        href="https://elyra.readthedocs.io/en/v3.12.0/user_guide/pipeline-components.html#example-custom-components"
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -454,7 +443,7 @@ const PipelineWrapper: React.FC<IProps> = ({
         });
       }
     },
-    [palette, shell.currentWidget]
+    [shell.currentWidget]
   );
 
   const onFileRequested = async (args: any): Promise<string[] | undefined> => {
@@ -462,78 +451,82 @@ const PipelineWrapper: React.FC<IProps> = ({
       contextRef.current.path,
       args.filename ?? ''
     );
-
-    switch (args.propertyID) {
-      case 'elyra_dependencies':
+    if (args.propertyID.includes('dependencies')) {
+      const res = await showBrowseFileDialog(
+        browserFactory.defaultBrowser.model.manager,
         {
-          const res = await showBrowseFileDialog(
-            browserFactory.defaultBrowser.model.manager,
-            {
-              multiselect: true,
-              includeDir: true,
-              rootPath: PathExt.dirname(filename),
-              filter: (model: any): boolean => {
-                return model.path !== filename;
-              }
-            }
-          );
-
-          if (res.button.accept && res.value.length) {
-            return res.value.map((v: any) => v.path);
+          multiselect: true,
+          includeDir: true,
+          rootPath: PathExt.dirname(filename),
+          filter: (model: any): boolean => {
+            return model.path !== filename;
           }
         }
-        break;
-      default:
+      );
+
+      if (res.button.accept && res.value.length) {
+        return res.value.map((v: any) => v.path);
+      }
+    } else {
+      const res = await showBrowseFileDialog(
+        browserFactory.defaultBrowser.model.manager,
         {
-          const res = await showBrowseFileDialog(
-            browserFactory.defaultBrowser.model.manager,
-            {
-              startPath: PathExt.dirname(filename),
-              filter: (model: any): boolean => {
-                if (args.filters?.File === undefined) {
-                  return true;
-                }
-
-                const ext = PathExt.extname(model.path);
-                return args.filters.File.includes(ext);
-              }
+          startPath: PathExt.dirname(filename),
+          filter: (model: any): boolean => {
+            if (args.filters?.File === undefined) {
+              return true;
             }
-          );
 
-          if (res.button.accept && res.value.length) {
-            const file = PipelineService.getPipelineRelativeNodePath(
-              contextRef.current.path,
-              res.value[0].path
-            );
-            return [file];
+            const ext = PathExt.extname(model.path);
+            return args.filters.File.includes(ext);
           }
         }
-        break;
+      );
+
+      if (res.button.accept && res.value.length) {
+        const file = PipelineService.getPipelineRelativeNodePath(
+          contextRef.current.path,
+          res.value[0].path
+        );
+        return [file];
+      }
     }
 
     return undefined;
   };
 
   const onPropertiesUpdateRequested = async (args: any): Promise<any> => {
+    if (!contextRef.current.path) {
+      return args;
+    }
     const path = PipelineService.getWorkspaceRelativeNodePath(
       contextRef.current.path,
-      args.elyra_filename
+      args.component_parameters.filename
     );
-    const new_env_vars = await ContentParser.getEnvVars(
-      path
-    ).then((response: any) => response.map((str: string) => str + '='));
+    const new_env_vars = await ContentParser.getEnvVars(path).then(
+      (response: any) =>
+        response.map((str: string) => {
+          return { env_var: str };
+        })
+    );
 
-    const env_vars = args.elyra_env_vars ?? [];
+    const env_vars = args.component_parameters?.env_vars ?? [];
     const merged_env_vars = [
       ...env_vars,
       ...new_env_vars.filter(
-        (new_var: string) =>
-          !env_vars.some((old_var: string) => old_var.startsWith(new_var))
+        (new_var: any) =>
+          !env_vars.some((old_var: any) => {
+            return old_var.env_var === new_var.env_var;
+          })
       )
     ];
 
     return {
-      elyra_env_vars: merged_env_vars.filter(Boolean)
+      ...args,
+      component_parameters: {
+        ...args.component_parameters,
+        env_vars: merged_env_vars.filter(Boolean)
+      }
     };
   };
 
@@ -568,7 +561,7 @@ const PipelineWrapper: React.FC<IProps> = ({
               <br />
               <br />
               <a
-                href="https://elyra.readthedocs.io/en/v3.7.0rc0/user_guide/best-practices-custom-pipeline-components.html#troubleshooting-missing-pipeline-components"
+                href="https://elyra.readthedocs.io/en/v3.12.0/user_guide/best-practices-custom-pipeline-components.html#troubleshooting-missing-pipeline-components"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -620,12 +613,13 @@ const PipelineWrapper: React.FC<IProps> = ({
       // Check that all nodes are valid
       const errorMessages = validate(
         JSON.stringify(pipelineJson),
-        getAllPaletteNodes(palette)
+        getAllPaletteNodes(palette),
+        palette.properties
       );
       if (errorMessages && errorMessages.length > 0) {
         let errorMessage = '';
         for (const error of errorMessages) {
-          errorMessage += error.message;
+          errorMessage += (errorMessage ? '\n' : '') + error.message;
         }
         setAlert(`Failed ${actionType}: ${errorMessage}`);
         return;
@@ -753,6 +747,7 @@ const PipelineWrapper: React.FC<IProps> = ({
 
       PipelineService.setNodePathsRelativeToWorkspace(
         pipelineJson.pipelines[0],
+        getAllPaletteNodes(palette),
         contextRef.current.path
       );
 
@@ -797,21 +792,30 @@ const PipelineWrapper: React.FC<IProps> = ({
     return showDialog({
       title: 'Clear Pipeline',
       body: 'Are you sure you want to clear the pipeline?',
-      buttons: [Dialog.cancelButton(), Dialog.okButton({ label: 'Clear' })]
+      buttons: [
+        Dialog.cancelButton(),
+        Dialog.okButton({ label: 'Clear All' }),
+        Dialog.okButton({ label: 'Clear Canvas' })
+      ]
     }).then(result => {
       if (result.button.accept) {
         const newPipeline: any = contextRef.current.model.toJSON();
         if (newPipeline?.pipelines?.[0]?.nodes?.length > 0) {
           newPipeline.pipelines[0].nodes = [];
         }
-        const pipelineProperties =
-          newPipeline?.pipelines?.[0]?.app_data?.properties;
-        if (pipelineProperties) {
-          // Remove all fields of pipeline properties except for the name/runtime (readonly)
-          newPipeline.pipelines[0].app_data.properties = {
-            name: pipelineProperties.name,
-            runtime: pipelineProperties.runtime
-          };
+        // remove supernode pipelines
+        newPipeline.pipelines = [newPipeline.pipelines[0]];
+        // only clear pipeline properties when "Clear All" is selected
+        if (result.button.label === 'Clear All') {
+          const pipelineProperties =
+            newPipeline?.pipelines?.[0]?.app_data?.properties;
+          if (pipelineProperties) {
+            // Remove all fields of pipeline properties except for the name/runtime (readonly)
+            newPipeline.pipelines[0].app_data.properties = {
+              name: pipelineProperties.name,
+              runtime: pipelineProperties.runtime
+            };
+          }
         }
         contextRef.current.model.fromJSON(newPipeline);
       }
@@ -1047,10 +1051,6 @@ const PipelineWrapper: React.FC<IProps> = ({
   }, [addFileToPipelineSignal, handleAddFileToPipeline]);
 
   const handleClose = (event?: React.SyntheticEvent, reason?: string): void => {
-    if (reason === 'clickaway') {
-      return;
-    }
-
     setAlert('');
   };
 
@@ -1063,17 +1063,21 @@ const PipelineWrapper: React.FC<IProps> = ({
   };
 
   const handleOpenSettings = (): void => {
-    commands.execute('settingeditor:open');
+    commands.execute('settingeditor:open', { query: 'Pipeline Editor' });
   };
 
   return (
     <ThemeProvider theme={theme}>
       <Snackbar
         open={alert !== ''}
-        autoHideDuration={6000}
+        autoHideDuration={30000}
         onClose={handleClose}
       >
-        <Alert severity={'error'} onClose={handleClose}>
+        <Alert
+          severity={'error'}
+          onClose={handleClose}
+          className={'elyra-PipelineEditor-Alert'}
+        >
           {alert}
         </Alert>
       </Snackbar>
@@ -1081,7 +1085,7 @@ const PipelineWrapper: React.FC<IProps> = ({
         <PipelineEditor
           ref={ref}
           palette={palette}
-          pipelineProperties={pipelineProperties}
+          pipelineProperties={palette.properties}
           toolbar={toolbar}
           pipeline={pipeline}
           onAction={onAction}

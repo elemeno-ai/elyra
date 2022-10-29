@@ -43,6 +43,7 @@ from elyra.pipeline.catalog_connector import ComponentCatalogConnector
 from elyra.pipeline.component import Component
 from elyra.pipeline.component import ComponentParser
 from elyra.pipeline.component_metadata import ComponentCatalogMetadata
+from elyra.pipeline.component_parameter import ComponentParameter
 from elyra.pipeline.runtime_type import RuntimeProcessorType
 
 BLOCKING_TIMEOUT = 0.5
@@ -64,6 +65,7 @@ class RefreshInProgressError(Exception):
 
 class RefreshQueue(Queue):
     """Entries are associated with a complete refresh of the Component Cache."""
+
     _refreshing: bool
 
     def __init__(self):
@@ -98,6 +100,7 @@ class UpdateQueue(Queue):
 
     This class merely exists to distinguish it from the RefreshQueue instance.
     """
+
     pass
 
 
@@ -112,11 +115,10 @@ class CacheUpdateManager(Thread):
     the components of the referenced catalog are inserted or updated (depending on
     its prior existence).
     """
-    def __init__(self,
-                 log: Logger,
-                 component_cache: ComponentCacheType,
-                 refresh_queue: RefreshQueue,
-                 update_queue: UpdateQueue):
+
+    def __init__(
+        self, log: Logger, component_cache: ComponentCacheType, refresh_queue: RefreshQueue, update_queue: UpdateQueue
+    ):
         super().__init__()
 
         self.daemon = True
@@ -163,7 +165,7 @@ class CacheUpdateManager(Thread):
                 self._component_cache,
                 self._refresh_queue if self._check_refresh_queue else self._update_queue,
                 catalog,
-                action
+                action,
             )
             updater_thread.start()
             queue_clause = "refreshing" if self._check_refresh_queue else "updating"
@@ -188,8 +190,10 @@ class CacheUpdateManager(Thread):
                 time_since_last_check = int(time.time() - thread.last_warn_time)
                 if time_since_last_check > CATALOG_UPDATE_TIMEOUT:
                     thread.last_warn_time = time.time()
-                    self.log.warning(f"Cache update for catalog '{thread.name}' is still processing "
-                                     f"after {cumulative_run_time} seconds ...")
+                    self.log.warning(
+                        f"Cache update for catalog '{thread.name}' is still processing "
+                        f"after {cumulative_run_time} seconds ..."
+                    )
 
             else:
                 self.log.debug(f"CacheUpdateWorker completed for catalog: '{thread.name}', action: '{thread.action}'.")
@@ -202,14 +206,18 @@ class CacheUpdateManager(Thread):
                 # Report successful join for threads that have previously logged a
                 # cache update duration warning
                 if thread.last_warn_time != thread.task_start_time:
-                    self.log.info(f"Cache update for catalog '{thread.name}' has "
-                                  f"completed after {cumulative_run_time} seconds")
+                    self.log.info(
+                        f"Cache update for catalog '{thread.name}' has "
+                        f"completed after {cumulative_run_time} seconds"
+                    )
 
             if len(self._threads) > WORKER_THREAD_WARNING_THRESHOLD:
-                self.log.warning(f"CacheUpdateWorker outstanding threads threshold "
-                                 f"({WORKER_THREAD_WARNING_THRESHOLD}) has been exceeded. "
-                                 f"{len(self._threads)} threads are outstanding.  This may "
-                                 f"indicate a possible issue.")
+                self.log.warning(
+                    f"CacheUpdateWorker outstanding threads threshold "
+                    f"({WORKER_THREAD_WARNING_THRESHOLD}) has been exceeded. "
+                    f"{len(self._threads)} threads are outstanding.  This may "
+                    f"indicate a possible issue."
+                )
 
         return outstanding_threads
 
@@ -228,11 +236,14 @@ class CacheUpdateManager(Thread):
 
 class CacheUpdateWorker(Thread):
     """Spawned by the CacheUpdateManager to perform work against the component cache."""
-    def __init__(self,
-                 component_cache: ComponentCacheType,
-                 queue: Queue,
-                 catalog: ComponentCatalogMetadata,
-                 action: Optional[str] = None):
+
+    def __init__(
+        self,
+        component_cache: ComponentCacheType,
+        queue: Queue,
+        catalog: ComponentCatalogMetadata,
+        action: Optional[str] = None,
+    ):
 
         super().__init__()
 
@@ -258,7 +269,7 @@ class CacheUpdateWorker(Thread):
 
     def run(self):
         """Apply the relative action to the given catalog entry in the cache."""
-        if self.action == 'delete':
+        if self.action == "delete":
             # Check all runtime types in cache for an entry of the given name.
             # If found, remove only the components from this catalog
             for runtime_type in self._component_cache:
@@ -267,24 +278,25 @@ class CacheUpdateWorker(Thread):
                     break
         else:  # 'modify' - replace (or add) components from the given catalog an update its status
             runtime_type = self.catalog.runtime_type.name
-            catalog_state = self._component_cache[runtime_type][self.catalog.name].get('status')
+            catalog_state = self._component_cache[runtime_type][self.catalog.name].get("status")
             try:
                 # Replace all components for the given catalog
-                self._component_cache[runtime_type][self.catalog.name]['components'] = \
-                    ComponentCache.instance().read_component_catalog(self.catalog)
-                catalog_state['state'] = "current"
-                catalog_state['errors'] = []  # reset any errors that may have been present
+                self._component_cache[runtime_type][self.catalog.name][
+                    "components"
+                ] = ComponentCache.instance().read_component_catalog(self.catalog)
+                catalog_state["state"] = "current"
+                catalog_state["errors"] = []  # reset any errors that may have been present
             except Exception as e:
                 # Update state with an 'error' action and the relevant message
-                catalog_state['state'] = "error"
-                catalog_state['errors'].append(str(e))
+                catalog_state["state"] = "error"
+                catalog_state["errors"].append(str(e))
 
     def prepare_cache_for_catalog(self, runtime_type: Optional[str] = None):
         """
         Add entries to the component cache for the runtime type and/or catalog
         of focus for this thread, and set the catalog state to 'updating'.
         """
-        if self.action == 'delete':
+        if self.action == "delete":
             # On 'delete' the runtime_type parameter will be None and since catalog names
             # are essentially unique across runtime types, we can break out of this loop
             # on first occurrence and let _that_ runtime type be used in the following code.
@@ -301,13 +313,10 @@ class CacheUpdateWorker(Thread):
         if not self._component_cache[runtime_type].get(self.catalog.name):
             self._component_cache[runtime_type][self.catalog.name] = {
                 "components": {},
-                "status": {
-                    "state": "updating",
-                    "errors": []
-                }
+                "status": {"state": "updating", "errors": []},
             }
         else:  # Set state to 'updating' for an existing entry
-            self._component_cache[runtime_type][self.catalog.name]['status']['state'] = 'updating'
+            self._component_cache[runtime_type][self.catalog.name]["status"]["state"] = "updating"
 
 
 class ComponentCache(SingletonConfigurable):
@@ -324,35 +333,43 @@ class ComponentCache(SingletonConfigurable):
 
     _generic_category_label = "Elyra"
     _generic_components: Dict[str, Component] = {
-        "notebook": Component(id="notebook",
-                              name="Notebook",
-                              description="Run notebook file",
-                              op="execute-notebook-node",
-                              catalog_type="elyra",
-                              component_reference="elyra",
-                              extensions=[".ipynb"],
-                              categories=[_generic_category_label]),
-        "python-script": Component(id="python-script",
-                                   name="Python Script",
-                                   description="Run Python script",
-                                   op="execute-python-node",
-                                   catalog_type="elyra",
-                                   component_reference="elyra",
-                                   extensions=[".py"],
-                                   categories=[_generic_category_label]),
-        "r-script": Component(id="r-script",
-                              name="R Script",
-                              description="Run R script",
-                              op="execute-r-node",
-                              catalog_type="elyra",
-                              component_reference="elyra",
-                              extensions=[".r"],
-                              categories=[_generic_category_label])}
+        "notebook": Component(
+            id="notebook",
+            name="Notebook",
+            description="Run notebook file",
+            op="execute-notebook-node",
+            catalog_type="elyra",
+            component_reference="elyra",
+            extensions=[".ipynb"],
+            categories=[_generic_category_label],
+        ),
+        "python-script": Component(
+            id="python-script",
+            name="Python Script",
+            description="Run Python script",
+            op="execute-python-node",
+            catalog_type="elyra",
+            component_reference="elyra",
+            extensions=[".py"],
+            categories=[_generic_category_label],
+        ),
+        "r-script": Component(
+            id="r-script",
+            name="R Script",
+            description="Run R script",
+            op="execute-r-node",
+            catalog_type="elyra",
+            component_reference="elyra",
+            extensions=[".r"],
+            categories=[_generic_category_label],
+        ),
+    }
 
     def __init__(self, **kwargs):
+        emulate_server_app: bool = kwargs.pop("emulate_server_app", False)
         super().__init__(**kwargs)
-
-        self.is_server_process = ComponentCache._determine_server_process(**kwargs)
+        self._component_cache = {}
+        self.is_server_process = ComponentCache._determine_server_process(emulate_server_app, **kwargs)
         self.manifest_dir = jupyter_runtime_dir()
         # Ensure queue attribute exists for non-server instances as well.
         self.refresh_queue: Optional[RefreshQueue] = None
@@ -366,12 +383,7 @@ class ComponentCache(SingletonConfigurable):
             self.observer.schedule(ManifestFileChangeHandler(self), self.manifest_dir)
 
             # Start a thread to manage updates to the component cache
-            manager = CacheUpdateManager(
-                self.log,
-                self._component_cache,
-                self.refresh_queue,
-                self.update_queue
-            )
+            manager = CacheUpdateManager(self.log, self._component_cache, self.refresh_queue, self.update_queue)
             self.cache_manager = manager
             self.cache_manager.start()
             self.log.debug("CacheUpdateManager started...")
@@ -379,13 +391,13 @@ class ComponentCache(SingletonConfigurable):
             self.manifest_filename = os.path.join(self.manifest_dir, f"elyra-component-manifest-{os.getpid()}.json")
 
     @staticmethod
-    def _determine_server_process(**kwargs) -> bool:
+    def _determine_server_process(emulate_server_app: bool, **kwargs) -> bool:
         """Determines if this process is a server (extension) process."""
-        app_names = ['ServerApp', 'ElyraApp']
+        app_names = ["ServerApp", "ElyraApp"]
         is_server_process = False
-        if 'parent' in kwargs and kwargs['parent'].__class__.__name__ in app_names:
+        if "parent" in kwargs and kwargs["parent"].__class__.__name__ in app_names:
             is_server_process = True
-        elif 'emulate_server_app' in kwargs and kwargs['emulate_server_app']:  # Used in unittests
+        elif emulate_server_app:  # Used in unittests
             is_server_process = True
 
         return is_server_process
@@ -430,7 +442,7 @@ class ComponentCache(SingletonConfigurable):
             raise RefreshInProgressError()
         catalogs = MetadataManager(schemaspace=ComponentCatalogs.COMPONENT_CATALOGS_SCHEMASPACE_ID).get_all()
         for catalog in catalogs:
-            self._insert_request(self.refresh_queue, catalog, 'modify')
+            self._insert_request(self.refresh_queue, catalog, "modify")
 
     def update(self, catalog: Metadata, action: str):
         """
@@ -462,7 +474,7 @@ class ComponentCache(SingletonConfigurable):
         """
         Remove all existing manifest files in the Jupyter runtimes directory.
         """
-        manifest_files = Path(self.manifest_dir).glob('**/elyra-component-manifest-*.json')
+        manifest_files = Path(self.manifest_dir).glob("**/elyra-component-manifest-*.json")
         for file in manifest_files:
             os.remove(str(file))
 
@@ -475,7 +487,7 @@ class ComponentCache(SingletonConfigurable):
         if not os.path.isfile(filename):
             self.log.debug(f"Manifest file '{filename}' doesn't exist and will be created.")
             return {}
-        with open(filename, 'r') as f:
+        with open(filename, "r") as f:
             manifest: Dict[str, str] = json.load(f)
         self.log.debug(f"Reading manifest '{manifest}' from file '{filename}'")
         return manifest
@@ -485,7 +497,7 @@ class ComponentCache(SingletonConfigurable):
         filename = filename or self.manifest_filename
         manifest = manifest or {}
         self.log.debug(f"Updating manifest '{manifest}' to file '{filename}'")
-        with open(filename, 'w') as f:
+        with open(filename, "w") as f:
             json.dump(manifest, f, indent=2)
 
     def wait_for_all_cache_tasks(self):
@@ -505,7 +517,7 @@ class ComponentCache(SingletonConfigurable):
 
         catalogs = self._component_cache.get(platform.name, {})
         for catalog_name, catalog_properties in catalogs.items():
-            components.extend(list(catalog_properties.get('components', {}).values()))
+            components.extend(list(catalog_properties.get("components", {}).values()))
 
         if not components and platform != RuntimeProcessorType.LOCAL:
             self.log.error(f"No components could be found in any catalog for platform type '{platform.name}'.")
@@ -520,7 +532,7 @@ class ComponentCache(SingletonConfigurable):
 
         catalogs = self._component_cache.get(platform.name, {})
         for catalog_name, catalog_properties in catalogs.items():
-            component = catalog_properties.get('components', {}).get(component_id)
+            component = catalog_properties.get("components", {}).get(component_id)
             if component:
                 break
 
@@ -529,19 +541,22 @@ class ComponentCache(SingletonConfigurable):
 
         return component
 
-    def _load_catalog_reader_class(self, catalog: ComponentCatalogMetadata, file_types: List[str]) \
-            -> Optional[ComponentCatalogConnector]:
+    def _load_catalog_reader_class(
+        self, catalog: ComponentCatalogMetadata, file_types: List[str]
+    ) -> Optional[ComponentCatalogConnector]:
         """
         Load the appropriate entrypoint class based on the schema name indicated in
         the ComponentCatalogMetadata instance and the file types associated with the component
         parser in use
         """
         try:
-            catalog_reader = entrypoints.get_group_named('elyra.component.catalog_types').get(catalog.schema_name)
+            catalog_reader = entrypoints.get_group_named("elyra.component.catalog_types").get(catalog.schema_name)
             if not catalog_reader:
-                self.log.error(f"No entrypoint with name '{catalog.schema_name}' was found in group "
-                               f"'elyra.component.catalog_types' to match the 'schema_name' given in catalog "
-                               f"'{catalog.display_name}'. Skipping...")
+                self.log.error(
+                    f"No entrypoint with name '{catalog.schema_name}' was found in group "
+                    f"'elyra.component.catalog_types' to match the 'schema_name' given in catalog "
+                    f"'{catalog.display_name}'. Skipping..."
+                )
                 return None
 
             catalog_reader = catalog_reader.load()(file_types, parent=self.parent)
@@ -580,8 +595,10 @@ class ComponentCache(SingletonConfigurable):
             try:
                 parsed_components = parser.parse(catalog_entry) or []
             except Exception as e:
-                self.log.warning(f"Could not parse definition for component with identifying information: "
-                                 f"'{catalog_entry.entry_reference}' -> {str(e)}")
+                self.log.warning(
+                    f"Could not parse definition for component with identifying information: "
+                    f"'{catalog_entry.entry_reference}' -> {str(e)}"
+                )
             else:
                 for component in parsed_components:
                     components[component.id] = component
@@ -597,6 +614,13 @@ class ComponentCache(SingletonConfigurable):
         return ComponentCache._generic_components.get(component_id)
 
     @staticmethod
+    def get_generic_component_from_op(component_op: str) -> Optional[Component]:
+        for component in ComponentCache.get_generic_components():
+            if component.op == component_op:
+                return component
+        return None
+
+    @staticmethod
     def get_generic_component_ops() -> List[str]:
         return [component.op for component in ComponentCache.get_generic_components()]
 
@@ -606,8 +630,9 @@ class ComponentCache(SingletonConfigurable):
         Loads the jinja template of the given name from the
         elyra/templates/components folder
         """
-        loader = PackageLoader('elyra', 'templates/components')
+        loader = PackageLoader("elyra", "templates/components")
         template_env = Environment(loader=loader)
+        template_env.policies["json.dumps_kwargs"] = {"sort_keys": False}  # prevent automatic key sort on 'tojson'
 
         return template_env.get_template(template_name)
 
@@ -616,7 +641,7 @@ class ComponentCache(SingletonConfigurable):
         """
         Converts catalog components into appropriate canvas palette format
         """
-        template = ComponentCache.load_jinja_template('canvas_palette_template.jinja2')
+        template = ComponentCache.load_jinja_template("canvas_palette_template.jinja2")
 
         # Define a fallback category for components with no given categories
         fallback_category_name = "No Category"
@@ -646,16 +671,21 @@ class ComponentCache(SingletonConfigurable):
     @staticmethod
     def to_canvas_properties(component: Component) -> Dict:
         """
-        Converts catalog components into appropriate canvas properties format
+        Converts catalog components into appropriate canvas properties format.
 
         If component_id is one of the generic set, generic template is rendered,
-        otherwise, the  runtime-specific property template is rendered
+        otherwise, the  runtime-specific property template is rendered.
         """
         if ComponentCache.get_generic_component(component.id) is not None:
-            template = ComponentCache.load_jinja_template('generic_properties_template.jinja2')
+            template = ComponentCache.load_jinja_template("generic_properties_template.jinja2")
         else:
-            template = ComponentCache.load_jinja_template('canvas_properties_template.jinja2')
+            template = ComponentCache.load_jinja_template("canvas_properties_template.jinja2")
 
+        template_vars = {
+            "elyra_owned_parameters": component.get_elyra_parameters(),
+            "render_parameter_details": ComponentParameter.render_parameter_details,
+        }
+        template.globals.update(template_vars)
         canvas_properties = template.render(component=component)
         return json.loads(canvas_properties)
 
@@ -680,7 +710,7 @@ class ManifestFileChangeHandler(FileSystemEventHandler):
         if manifest:  # only update the manifest if there is work to do
             for catalog, action in manifest.items():
                 self.log.debug(f"ManifestFileChangeHandler: inserting ({catalog},{action}) into update queue...")
-                if action == 'delete':
+                if action == "delete":
                     # The metadata instance has already been deleted, so we must
                     # fabricate an instance that only consists of a catalog name
                     catalog_instance = ComponentCatalogMetadata(name=catalog)
