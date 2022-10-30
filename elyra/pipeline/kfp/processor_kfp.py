@@ -567,9 +567,6 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
                         "mlpipeline-ui-metadata": f"{pipeline_envs['ELYRA_WRITABLE_CONTAINER_DIR']}/mlpipeline-ui-metadata.json",  # noqa
                     },
                 )
-                ## FIX right now were adding the gcp sa secret to all operations by default, should control it with some sort of flag
-                container_op.apply(gcp.use_gcp_secret('kfp-gcp-bq-account'))
-
 
                 if cos_secret and not export:
                     container_op.apply(use_aws_secret(cos_secret))
