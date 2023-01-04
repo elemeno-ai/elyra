@@ -15,6 +15,7 @@ jobs:
       - name: Build elyra python server
         run: |
           pip install -r etc/docker/elyra/requirements.txt
+          make dev-dependencies
           make build-server
       - name: prepare dirs
         env:
