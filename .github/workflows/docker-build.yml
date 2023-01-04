@@ -9,6 +9,12 @@ jobs:
       - uses: actions/checkout@v3
         with:
           clean: false
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+      - name: Build elyra python server
+        run: |
+          make build-server
       - name: prepare dirs
         env:
           TAG: 3.12.0
