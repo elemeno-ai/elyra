@@ -39,6 +39,10 @@ RUN elyra-metadata create component-catalogs \
     --runtime_type=KUBEFLOW_PIPELINES \
     --categories="['examples']"
 
+RUN apt update && apt install openssh-client -y
+
+RUN echo "$NB_USER:$NB_USER" | chpasswd && adduser $NB_USER sudo
+
 USER $NB_USER
 
 RUN conda remove --force -y terminado && \
