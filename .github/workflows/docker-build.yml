@@ -17,7 +17,7 @@ jobs:
           mkdir -p build/docker
           cp etc/docker/elyra/Dockerfile build/docker/Dockerfile
           cp etc/docker/elyra/start-elyra.sh build/docker/start-elyra.sh
-	        cp etc/docker/elyra/requirements.txt build/docker/requirements.txt
+          cp etc/docker/elyra/requirements.txt build/docker/requirements.txt
           mkdir -p build/docker/elyra
           cp dist/elyra-$(ELYRA_VERSION)-py3-none-any.whl build/docker/
       - name: Set up Docker Buildx
