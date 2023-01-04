@@ -43,8 +43,8 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           build-args: |
-            ELYRA_VERSION=${{ env.ELYRA_VERSION }}
-            TAG=${{ env.TAG }}
+            "ELYRA_VERSION=${{ env.ELYRA_VERSION }}"
+            "TAG=${{ env.TAG }}"
           file: etc/docker/elyra/Dockerfile
           context: etc/docker/elyra
           tags: 361265061473.dkr.ecr.us-east-1.amazonaws.com/elemeno-elyra:${{ github.ref_name }}
@@ -55,8 +55,8 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           build-args: |
-            ELYRA_VERSION=${{ env.ELYRA_VERSION }}
-            TAG=${{ env.TAG }}
+            "ELYRA_VERSION=${{ env.ELYRA_VERSION }}"
+            "TAG=${{ env.TAG }}"
           file: etc/docker/elyra/Dockerfile
           context: etc/docker/elyra
           push: true
