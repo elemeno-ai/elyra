@@ -24,7 +24,7 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           file: etc/docker/elyra/Dockerfile
-          context: .
+          context: etc/docker/elyra
           tags: 361265061473.dkr.ecr.us-east-1.amazonaws.com/elemeno-elyra:${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -33,7 +33,7 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           file: etc/docker/elyra/Dockerfile
-          context: .
+          context: etc/docker/elyra
           push: true
           tags: 361265061473.dkr.ecr.us-east-1.amazonaws.com/elemeno-elyra:${{ github.ref_name }}
           cache-from: type=gha
