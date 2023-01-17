@@ -26,7 +26,7 @@ ARG ELYRA_PACKAGE=elyra-"$ELYRA_VERSION"-py3-none-any.whl
 COPY requirements.txt ${ELYRA_PACKAGE}* ./
 
 # Install Elyra
-RUN python3 -m pip install --quiet --no-cache-dir "$ELYRA_PACKAGE"[all] && rm $ELYRA_PACKAGE
+RUN python3 -m pip install --disable-pip-version-check --quiet --no-cache-dir "$ELYRA_PACKAGE"[all] && rm $ELYRA_PACKAGE
 
 # Install custom requirements
 RUN python3 -m pip install -r requirements.txt && rm requirements.txt
