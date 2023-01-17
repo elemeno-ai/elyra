@@ -25,6 +25,11 @@ echo "JupyterLab ip:" ${NB_IP}
 echo "JupyterLab port: " ${NB_PORT}
 echo "Gateway URL: " ${JUPYTER_GATEWAY_URL}
 
+if [[ "$GRANT_SUDO" == "1" || "$GRANT_SUDO" == "yes" ]]; then
+    _log "Granting ${NB_USER} passwordless sudo rights!"
+    echo "${NB_USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/added-by-start-script
+fi
+
 echo "${@: -1}"
 
 exec /usr/local/bin/start-notebook.sh --port=${NB_PORT} --ip=${NB_IP}  $*
