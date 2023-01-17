@@ -28,10 +28,11 @@ import pytest
 
 from elyra.metadata.metadata import Metadata
 from elyra.pipeline.airflow.processor_airflow import AirflowPipelineProcessor
-from elyra.pipeline.component_parameter import ElyraProperty
 from elyra.pipeline.parser import PipelineParser
 from elyra.pipeline.pipeline import GenericOperation
+from elyra.pipeline.pipeline_constants import COS_OBJECT_PREFIX
 from elyra.pipeline.pipeline_constants import MOUNTED_VOLUMES
+from elyra.pipeline.properties import ElyraProperty
 from elyra.pipeline.runtime_type import RuntimeProcessorType
 from elyra.tests.pipeline.test_pipeline_parser import _read_pipeline_resource
 from elyra.util.github import GithubClient
@@ -153,8 +154,11 @@ def test_pipeline_process(monkeypatch, processor, parsed_pipeline, sample_metada
 
     assert response.run_url == sample_metadata["metadata"]["api_endpoint"]
     assert response.object_storage_url == sample_metadata["metadata"]["cos_endpoint"]
-    # Verifies that only this substring is in the storage path since a timestamp is injected into the name
-    assert "/" + sample_metadata["metadata"]["cos_bucket"] + "/" + "untitled" in response.object_storage_path
+
+    # Verifies cos_object_prefix is added to storage path and that the correct substring is
+    # in the storage path since a timestamp is injected into the name
+    cos_prefix = parsed_pipeline.pipeline_properties.get(COS_OBJECT_PREFIX)
+    assert f"/{sample_metadata['metadata']['cos_bucket']}/{cos_prefix}/untitled" in response.object_storage_path
 
 
 @pytest.mark.parametrize("parsed_pipeline", [PIPELINE_FILE_COMPLEX], indirect=True)
@@ -172,6 +176,10 @@ def test_create_file(monkeypatch, processor, parsed_pipeline, parsed_ordered_dic
     monkeypatch.setattr(processor, "_upload_dependencies_to_object_store", lambda w, x, y, prefix: True)
     monkeypatch.setattr(processor, "_cc_pipeline", lambda x, y, z: parsed_ordered_dict)
 
+    # Ensure the value of COS_OBJECT_PREFIX has been propagated to the Pipeline object appropriately
+    cos_prefix = pipeline_json["pipelines"][0]["app_data"]["properties"]["pipeline_defaults"].get(COS_OBJECT_PREFIX)
+    assert cos_prefix == parsed_pipeline.pipeline_properties.get(COS_OBJECT_PREFIX)
+
     with tempfile.TemporaryDirectory() as temp_dir:
         export_pipeline_output_path = os.path.join(temp_dir, f"{export_pipeline_name}.py")
 
@@ -186,7 +194,8 @@ def test_create_file(monkeypatch, processor, parsed_pipeline, parsed_ordered_dic
         assert export_pipeline_output_path == response
         assert os.path.isfile(export_pipeline_output_path)
 
-        file_as_lines = open(response).read().splitlines()
+        with open(response) as f:
+            file_as_lines = f.read().splitlines()
 
         assert "from airflow.contrib.operators.kubernetes_pod_operator import KubernetesPodOperator" in file_as_lines
 
@@ -206,12 +215,15 @@ def test_create_file(monkeypatch, processor, parsed_pipeline, parsed_ordered_dic
                     # Gets sub-list slice starting where the Notebook Op starts
                     init_line = i + 1
                     for idx, line in enumerate(file_as_lines[init_line:], start=init_line):
+                        if "--cos-endpoint" in line:
+                            assert f"--cos-endpoint {sample_metadata['metadata']['cos_endpoint']}" in line
+                        if "--cos-bucket" in line:
+                            assert f"--cos-bucket {sample_metadata['metadata']['cos_bucket']}" in line
+                        if "--cos-directory" in line:
+                            assert f"--cos-directory '{cos_prefix}/some-instance-id'" in line
+
                         if "namespace=" in line:
                             assert sample_metadata["metadata"]["user_namespace"] == read_key_pair(line)["value"]
-                        elif "cos_endpoint=" in line:
-                            assert sample_metadata["metadata"]["cos_endpoint"] == read_key_pair(line)["value"]
-                        elif "cos_bucket=" in line:
-                            assert sample_metadata["metadata"]["cos_bucket"] == read_key_pair(line)["value"]
                         elif "name=" in line and "Volume" not in file_as_lines[idx - 1]:
                             assert node["app_data"]["ui_data"]["label"] == read_key_pair(line)["value"]
                         elif "notebook=" in line:
@@ -289,7 +301,8 @@ def test_create_file_custom_components(
         assert export_pipeline_output_path == response
         assert os.path.isfile(export_pipeline_output_path)
 
-        file_as_lines = open(response).read().splitlines()
+        with open(response) as f:
+            file_as_lines = f.read().splitlines()
 
         pipeline_description = pipeline_json["pipelines"][0]["app_data"]["properties"]["description"]
         escaped_description = pipeline_description.replace('"""', '\\"\\"\\"')
@@ -319,7 +332,7 @@ def test_create_file_custom_components(
                     # Component parameters must be compared with those on the Operation
                     # object rather than those given in the pipeline JSON, since property
                     # propagation in PipelineDefinition can result in changed parameters
-                    component_parameters = op.component_params
+                    component_parameters = op.component_props
                     break
             for i in range(len(file_as_lines)):
                 # Matches custom component operators
@@ -338,7 +351,7 @@ def test_create_file_custom_components(
 
         # Test that parameter value processing proceeded as expected for each data type
         op_id = "bb9606ca-29ec-4133-a36a-67bd2a1f6dc3"
-        op_params = parsed_ordered_dict[op_id].get("component_params", {})
+        op_params = parsed_ordered_dict[op_id].get("component_props", {})
         str_no_default = op_params.pop("str_no_default")
         expected_params = {
             "mounted_volumes": '"a component-defined property"',
@@ -475,8 +488,8 @@ def test_collect_envs(processor):
         type="execution-node",
         classifier="execute-notebook-node",
         name="test",
-        component_params={"filename": pipelines_test_file, "runtime_image": "tensorflow/tensorflow:latest"},
-        elyra_params={"env_vars": converted_envs},
+        component_props={"filename": pipelines_test_file, "runtime_image": "tensorflow/tensorflow:latest"},
+        elyra_props={"env_vars": converted_envs},
     )
 
     envs = processor._collect_envs(test_operation, cos_secret=None, cos_username="Alice", cos_password="secret")
@@ -662,7 +675,7 @@ def test_same_name_operator_in_pipeline(monkeypatch, processor, catalog_instance
     monkeypatch.setattr(processor, "_upload_dependencies_to_object_store", lambda w, x, y, prefix: True)
 
     pipeline_def_operation = parsed_pipeline.operations[task_id]
-    pipeline_def_operation_parameters = pipeline_def_operation.component_params_as_dict
+    pipeline_def_operation_parameters = pipeline_def_operation.component_props_as_dict
     pipeline_def_operation_str_param = pipeline_def_operation_parameters["str_no_default"]
 
     assert pipeline_def_operation_str_param["widget"] == "inputpath"
@@ -672,7 +685,7 @@ def test_same_name_operator_in_pipeline(monkeypatch, processor, catalog_instance
     ordered_operations = processor._cc_pipeline(
         parsed_pipeline, pipeline_name="some-name", pipeline_instance_id="some-instance-name"
     )
-    operation_parameters = ordered_operations[task_id]["component_params"]
+    operation_parameters = ordered_operations[task_id]["component_props"]
     operation_parameter_str_command = operation_parameters["str_no_default"]
 
     assert operation_parameter_str_command == "\"{{ ti.xcom_pull(task_ids='TestOperator_1') }}\""

@@ -15,27 +15,34 @@
 #
 
 import os
+from pathlib import Path
+import pickle
 
 from conftest import AIRFLOW_TEST_OPERATOR_CATALOG
 from conftest import KFP_COMPONENT_CACHE_INSTANCE
 import pytest
 
-from elyra.pipeline.component_parameter import ElyraPropertyList
-from elyra.pipeline.component_parameter import EnvironmentVariable
-from elyra.pipeline.component_parameter import KubernetesAnnotation
-from elyra.pipeline.component_parameter import KubernetesSecret
-from elyra.pipeline.component_parameter import KubernetesToleration
-from elyra.pipeline.component_parameter import VolumeMount
+from elyra.pipeline.kfp.kfp_properties import KfpPipelineParameter
 from elyra.pipeline.pipeline import PIPELINE_CURRENT_VERSION
 from elyra.pipeline.pipeline_constants import ENV_VARIABLES
 from elyra.pipeline.pipeline_constants import KUBERNETES_POD_ANNOTATIONS
 from elyra.pipeline.pipeline_constants import KUBERNETES_SECRETS
+from elyra.pipeline.pipeline_constants import KUBERNETES_SHARED_MEM_SIZE
 from elyra.pipeline.pipeline_constants import KUBERNETES_TOLERATIONS
 from elyra.pipeline.pipeline_constants import MOUNTED_VOLUMES
+from elyra.pipeline.pipeline_constants import PIPELINE_PARAMETERS
 from elyra.pipeline.pipeline_definition import Node
 from elyra.pipeline.pipeline_definition import PipelineDefinition
+from elyra.pipeline.properties import CustomSharedMemorySize
+from elyra.pipeline.properties import ElyraPropertyList
+from elyra.pipeline.properties import EnvironmentVariable
+from elyra.pipeline.properties import KubernetesAnnotation
+from elyra.pipeline.properties import KubernetesSecret
+from elyra.pipeline.properties import KubernetesToleration
+from elyra.pipeline.properties import VolumeMount
 from elyra.pipeline.validation import PipelineValidationManager
 from elyra.pipeline.validation import ValidationResponse
+from elyra.pipeline.validation import ValidationSeverity
 from elyra.tests.pipeline.util import _read_pipeline_resource
 
 
@@ -55,6 +62,41 @@ def validation_manager(setup_factory_data, component_cache):
     root = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__), "resources/validation_pipelines"))
     yield PipelineValidationManager.instance(root_dir=root)
     PipelineValidationManager.clear_instance()
+
+
+@pytest.fixture()
+def pvm(request, component_cache, tmp_path):
+    yield PipelineValidationManager.instance(root_dir=str(tmp_path))
+    PipelineValidationManager.clear_instance()
+
+
+@pytest.fixture()
+def dummy_text_file(tmp_path) -> Path:
+    """
+    Create a text file in tmp_path, which contains dummy data.
+    """
+    dummy_file = tmp_path / "text_file.txt"
+    assert not dummy_file.exists()
+    with open(dummy_file, "w") as fh:
+        fh.write("1,2,3,4,5\n")
+        fh.write("6,7,8,9,10\n")
+    yield dummy_file
+    # cleanup
+    dummy_file.unlink()
+
+
+@pytest.fixture()
+def dummy_binary_file(tmp_path) -> Path:
+    """
+    Create a binary file in tmp_path, which contains dummy data.
+    """
+    dummy_file = tmp_path / "binary_file.bin"
+    assert not dummy_file.exists()
+    with open(dummy_file, "wb") as fh:
+        pickle.dump({"key": "value"}, fh)
+    yield dummy_file
+    # cleanup
+    dummy_file.unlink()
 
 
 async def test_invalid_lower_pipeline_version(validation_manager, load_pipeline):
@@ -354,25 +396,80 @@ def test_invalid_node_property_dependency_filepath_non_existent(validation_manag
     assert issues[0]["data"]["nodeID"] == node["id"]
 
 
-def test_valid_node_property_dependency_filepath(validation_manager):
+def test_validate_filepath(pvm, dummy_text_file: Path, dummy_binary_file: Path):
+    """
+    Test function: PipelineValidationManager._validate_filepath
+    Scope: validate binary_file_ok function parameter
+    """
     response = ValidationResponse()
-    valid_filename = os.path.join(
-        os.path.dirname(__file__), "resources/validation_pipelines/generic_single_cycle.pipeline"
-    )
+
     node = {"id": "test-id", "app_data": {"label": "test"}}
     property_name = "test-property"
 
-    validation_manager._validate_filepath(
+    # Test scenario 1: text files and binary files are valid dependencies
+    # for generic components ('binary_file_ok' is explicitly set to True)
+    for file_dependency in [dummy_text_file, dummy_binary_file]:
+        pvm._validate_filepath(
+            node_id=node["id"],
+            file_dir=str(file_dependency.parent),
+            property_name=property_name,
+            node_label=node["app_data"]["label"],
+            filename=str(file_dependency),
+            response=response,
+            binary_file_ok=True,
+        )
+
+        assert not response.has_fatal, response.to_json()
+        assert not response.to_json().get("issues")
+
+    # Test scenario 2: text files and binary files are valid dependencies
+    # for generic components (use default for 'binary_file_ok' )
+    for file_dependency in [dummy_text_file, dummy_binary_file]:
+        pvm._validate_filepath(
+            node_id=node["id"],
+            file_dir=str(file_dependency.parent),
+            property_name=property_name,
+            node_label=node["app_data"]["label"],
+            filename=str(file_dependency),
+            response=response,
+        )
+
+        assert not response.has_fatal, response.to_json()
+        assert not response.to_json().get("issues")
+
+    # Test scenario 3: text files are valid input for 'file' widgets
+    # for custom components ('binary_file_ok' is explicitly set to False)
+    pvm._validate_filepath(
         node_id=node["id"],
-        file_dir=os.getcwd(),
+        file_dir=str(dummy_text_file.parent),
         property_name=property_name,
         node_label=node["app_data"]["label"],
-        filename=valid_filename,
+        filename=str(dummy_text_file),
         response=response,
+        binary_file_ok=False,
     )
 
-    assert not response.has_fatal
+    assert not response.has_fatal, response.to_json()
     assert not response.to_json().get("issues")
+
+    # Test scenario 4: binary files are invalid input for 'file' widgets
+    # for custom components
+    pvm._validate_filepath(
+        node_id=node["id"],
+        file_dir=str(dummy_binary_file.parent),
+        property_name=property_name,
+        node_label=node["app_data"]["label"],
+        filename=str(dummy_binary_file),
+        response=response,
+        binary_file_ok=False,
+    )
+
+    response_json = response.to_json()
+    assert response.has_fatal, response_json
+    assert response_json["issues"][0]["severity"] == ValidationSeverity.Error
+    assert response_json["issues"][0]["type"] == "invalidFileType"
+    assert "Property was assigned a file that is not unicode encoded." in response_json["issues"][0]["message"]
+    assert str(dummy_binary_file) in response_json["issues"][0]["data"]["value"]
 
 
 async def test_valid_node_property_pipeline_filepath(monkeypatch, validation_manager, load_pipeline):
@@ -424,7 +521,7 @@ def test_invalid_node_property_env_var(validation_manager):
 
     node = Node(node_dict)
     validation_manager._validate_elyra_owned_property(
-        node_id=node.id, node_label=node.label, node=node, param_name=ENV_VARIABLES, response=response
+        node_id=node.id, node_label=node.label, node=node, property_name=ENV_VARIABLES, response=response
     )
     issues = response.to_json().get("issues")
     assert issues[0]["severity"] == 1
@@ -446,15 +543,20 @@ def test_valid_node_property_volumes(validation_manager):
 
     volumes = ElyraPropertyList(
         [
-            VolumeMount(path="/mount/test", pvc_name="rwx-test-claim"),  # valid
-            VolumeMount(path="/mount/test_two", pvc_name="second-claim"),  # valid
+            VolumeMount(path="/mount/test", pvc_name="rwx-test-claim", sub_path=None, read_only=False),
+            VolumeMount(path="/mount/test", pvc_name="rwx-test-claim", sub_path="", read_only=False),
+            VolumeMount(path="/mount/test", pvc_name="rwx-test-claim", sub_path="relative/path", read_only=False),
+            VolumeMount(path="/mount/test_two", pvc_name="second-claim", sub_path="", read_only=True),
+            VolumeMount(path="/mount/test_two", pvc_name="second-claim", sub_path="path", read_only=True),
+            VolumeMount(path="/mount/test_two", pvc_name="second-claim", sub_path="path/", read_only=True),
+            VolumeMount(path="/mount/test_two", pvc_name="second-claim", sub_path="path/in/volume", read_only=None),
         ]
     )
     node_dict["app_data"]["component_parameters"][MOUNTED_VOLUMES] = volumes
 
     node = Node(node_dict)
     validation_manager._validate_elyra_owned_property(
-        node_id=node.id, node_label=node.label, node=node, param_name=MOUNTED_VOLUMES, response=response
+        node_id=node.id, node_label=node.label, node=node, property_name=MOUNTED_VOLUMES, response=response
     )
     issues = response.to_json().get("issues")
     assert len(issues) == 0
@@ -466,23 +568,28 @@ def test_invalid_node_property_volumes(validation_manager):
 
     volumes = ElyraPropertyList(
         [
-            VolumeMount(path="", pvc_name=""),  # missing mount path and pvc name
-            VolumeMount(path=None, pvc_name=None),  # missing mount path and pvc name
-            VolumeMount(path="", pvc_name="pvc"),  # missing mount path
-            VolumeMount(path=None, pvc_name="pvc"),  # missing mount path
-            VolumeMount(path="/path", pvc_name=""),  # missing pvc name
-            VolumeMount(path="/path/", pvc_name=None),  # missing pvc name
-            VolumeMount(path="/mount/test_four", pvc_name="second#claim"),  # invalid pvc name
+            VolumeMount(path="", pvc_name="", sub_path="", read_only=True),  # missing mount path and pvc name
+            VolumeMount(path=None, pvc_name=None, sub_path=None, read_only=True),  # missing mount path and pvc name
+            VolumeMount(path="", pvc_name="pvc", sub_path="", read_only=True),  # missing mount path
+            VolumeMount(path=None, pvc_name="pvc", sub_path=None, read_only=True),  # missing mount path
+            VolumeMount(path="/path", pvc_name="", sub_path="", read_only=True),  # missing pvc name
+            VolumeMount(path="/path/", pvc_name=None, sub_path=None, read_only=False),  # missing pvc name
+            VolumeMount(
+                path="/mount/test_four", pvc_name="second#claim", sub_path=None, read_only=False
+            ),  # invalid pvc name
+            VolumeMount(
+                path="/path", pvc_name="pvc", sub_path="/absolute/path", read_only=False
+            ),  # sub_path must be relative
         ]
     )
     node_dict["app_data"]["component_parameters"][MOUNTED_VOLUMES] = volumes
 
     node = Node(node_dict)
     validation_manager._validate_elyra_owned_property(
-        node_id=node.id, node_label=node.label, node=node, param_name=MOUNTED_VOLUMES, response=response
+        node_id=node.id, node_label=node.label, node=node, property_name=MOUNTED_VOLUMES, response=response
     )
     issues = response.to_json().get("issues")
-    assert len(issues) == 9, issues
+    assert len(issues) == 10, issues
     assert issues[0]["severity"] == 1
     assert issues[0]["type"] == "invalidVolumeMount"
     assert issues[0]["data"]["propertyName"] == MOUNTED_VOLUMES
@@ -496,6 +603,7 @@ def test_invalid_node_property_volumes(validation_manager):
     assert "Required persistent volume claim name was not specified." in issues[6]["message"]
     assert "Required persistent volume claim name was not specified." in issues[7]["message"]
     assert "PVC name 'second#claim' is not a valid Kubernetes resource name." in issues[8]["message"]
+    assert "Sub-path '/absolute/path' must be a relative path." in issues[9]["message"]
 
 
 def test_valid_node_property_kubernetes_toleration(validation_manager):
@@ -519,7 +627,7 @@ def test_valid_node_property_kubernetes_toleration(validation_manager):
 
     node = Node(node_dict)
     validation_manager._validate_elyra_owned_property(
-        node_id=node.id, node_label=node.label, node=node, param_name=KUBERNETES_TOLERATIONS, response=response
+        node_id=node.id, node_label=node.label, node=node, property_name=KUBERNETES_TOLERATIONS, response=response
     )
     issues = response.to_json().get("issues")
     assert len(issues) == 0, response.to_json()
@@ -554,7 +662,7 @@ def test_valid_node_property_kubernetes_pod_annotation(validation_manager):
 
     node = Node(node_dict)
     validation_manager._validate_elyra_owned_property(
-        node_id=node.id, node_label=node.label, node=node, param_name=KUBERNETES_POD_ANNOTATIONS, response=response
+        node_id=node.id, node_label=node.label, node=node, property_name=KUBERNETES_POD_ANNOTATIONS, response=response
     )
     issues = response.to_json().get("issues")
     assert len(issues) == 0, response.to_json()
@@ -603,7 +711,7 @@ def test_invalid_node_property_kubernetes_toleration(validation_manager):
 
     node = Node(node_dict)
     validation_manager._validate_elyra_owned_property(
-        node_id=node.id, node_label=node.label, node=node, param_name=KUBERNETES_TOLERATIONS, response=response
+        node_id=node.id, node_label=node.label, node=node, property_name=KUBERNETES_TOLERATIONS, response=response
     )
     issues = response.to_json().get("issues")
     assert len(issues) == len(invalid_tolerations), response.to_json()
@@ -682,7 +790,7 @@ def test_invalid_node_property_kubernetes_pod_annotation(validation_manager):
 
     node = Node(node_dict)
     validation_manager._validate_elyra_owned_property(
-        node_id=node.id, node_label=node.label, node=node, param_name=KUBERNETES_POD_ANNOTATIONS, response=response
+        node_id=node.id, node_label=node.label, node=node, property_name=KUBERNETES_POD_ANNOTATIONS, response=response
     )
     issues = response.to_json().get("issues")
     assert len(issues) == len(
@@ -710,7 +818,7 @@ def test_valid_node_property_secrets(validation_manager):
 
     node = Node(node_dict)
     validation_manager._validate_elyra_owned_property(
-        node_id=node.id, node_label=node.label, node=node, param_name=KUBERNETES_SECRETS, response=response
+        node_id=node.id, node_label=node.label, node=node, property_name=KUBERNETES_SECRETS, response=response
     )
     issues = response.to_json().get("issues")
     assert len(issues) == 0, issues
@@ -737,7 +845,7 @@ def test_invalid_node_property_secrets(validation_manager):
 
     node = Node(node_dict)
     validation_manager._validate_elyra_owned_property(
-        node_id=node.id, node_label=node.label, node=node, param_name=KUBERNETES_SECRETS, response=response
+        node_id=node.id, node_label=node.label, node=node, property_name=KUBERNETES_SECRETS, response=response
     )
     issues = response.to_json().get("issues")
     assert len(issues) == 14, issues
@@ -769,6 +877,91 @@ def test_invalid_node_property_secrets(validation_manager):
     assert "Required environment variable was not specified." in issues[11]["message"]
     assert "Required secret name was not specified." in issues[12]["message"]
     assert "Required secret key was not specified." in issues[13]["message"]
+
+
+def test_valid_node_property_shared_mem_size(validation_manager):
+    """
+    Verify that valid shared memory definitions pass validation
+    """
+    response = ValidationResponse()
+    node_dict = {"id": "test-id", "app_data": {"label": "test", "ui_data": {}, "component_parameters": {}}}
+
+    # test size
+    for size in [None, 0, 3.1415, 64]:
+        shared_mem_size = CustomSharedMemorySize(size=size, units="G")
+        node_dict["app_data"]["component_parameters"][KUBERNETES_SHARED_MEM_SIZE] = shared_mem_size
+
+        node = Node(node_dict)
+        validation_manager._validate_elyra_owned_property(
+            node_id=node.id,
+            node_label=node.label,
+            node=node,
+            property_name=KUBERNETES_SHARED_MEM_SIZE,
+            response=response,
+        )
+        issues = response.to_json().get("issues")
+        assert len(issues) == 0, issues
+
+    # test units
+    for unit in ["G", None, ""]:
+        shared_mem_size = CustomSharedMemorySize(size=0, units=unit)
+        node_dict["app_data"]["component_parameters"][KUBERNETES_SHARED_MEM_SIZE] = shared_mem_size
+
+        node = Node(node_dict)
+        validation_manager._validate_elyra_owned_property(
+            node_id=node.id,
+            node_label=node.label,
+            node=node,
+            property_name=KUBERNETES_SHARED_MEM_SIZE,
+            response=response,
+        )
+        issues = response.to_json().get("issues")
+        assert len(issues) == 0, issues
+
+
+def test_invalid_node_property_shared_mem_size(validation_manager):
+    """
+    Verify that invalid shared memory definitions are flagged by validation
+    """
+    node_dict = {"id": "test-id", "app_data": {"label": "test", "ui_data": {}, "component_parameters": {}}}
+
+    # test invalid size; note that 0 and None are considered valid
+    for size in [-1, "not-a-number"]:
+        shared_mem_size = CustomSharedMemorySize(size=size, units="G")
+        node_dict["app_data"]["component_parameters"][KUBERNETES_SHARED_MEM_SIZE] = shared_mem_size
+        node = Node(node_dict)
+        response = ValidationResponse()
+        validation_manager._validate_elyra_owned_property(
+            node_id=node.id,
+            node_label=node.label,
+            node=node,
+            property_name=KUBERNETES_SHARED_MEM_SIZE,
+            response=response,
+        )
+        issues = response.to_json().get("issues")
+        assert len(issues) == 1, issues
+        assert issues[0]["message"] == f"Shared memory size '{size}' must be a positive number."
+        assert issues[0]["data"]["value"]["size"] == size
+        assert issues[0]["data"]["value"]["units"] == "G"
+
+    # test invalid units
+    for unit in ["K", "Ki", "m", "mi", "g", "gi"]:
+        shared_mem_size = CustomSharedMemorySize(size=1, units=unit)
+        node_dict["app_data"]["component_parameters"][KUBERNETES_SHARED_MEM_SIZE] = shared_mem_size
+        node = Node(node_dict)
+        response = ValidationResponse()
+        validation_manager._validate_elyra_owned_property(
+            node_id=node.id,
+            node_label=node.label,
+            node=node,
+            property_name=KUBERNETES_SHARED_MEM_SIZE,
+            response=response,
+        )
+        issues = response.to_json().get("issues")
+        assert len(issues) == 1, issues
+        assert issues[0]["message"] == f"Shared memory size units '{unit}' must be 'G'."
+        assert issues[0]["data"]["value"]["size"] == 1
+        assert issues[0]["data"]["value"]["units"] == unit
 
 
 def test_valid_node_property_label(validation_manager):
@@ -981,3 +1174,171 @@ async def test_pipeline_aa_parent_node_missing_xcom_push(
     assert issues[0]["type"] == "invalidNodeProperty"
     assert issues[0]["data"]["nodeID"] == invalid_node_id
     assert issues[0]["data"]["parentNodeID"] == invalid_parent_id
+
+
+async def test_invalid_pipeline_parameter_duplicates(validation_manager, load_pipeline):
+    pipeline, response = load_pipeline("kf_with_parameters.pipeline")
+    duplicate_parameters = ElyraPropertyList(
+        [
+            KfpPipelineParameter(name="param1", description="dup", value="value1", default_value={}, required=True),
+            KfpPipelineParameter(name="param1", description="dup", value="value2", default_value={}, required=True),
+        ]
+    )
+
+    referenced_params = ["param1"]
+    pipeline["pipelines"][0]["nodes"][0]["app_data"]["component_parameters"]["pipeline_parameters"] = referenced_params
+
+    pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
+    pipeline_definition.primary_pipeline.set_property(PIPELINE_PARAMETERS, duplicate_parameters)
+    await validation_manager._validate_pipeline_parameters(
+        pipeline_definition=pipeline_definition,
+        pipeline_runtime="kfp",
+        response=response,
+    )
+
+    issues = response.to_json().get("issues")
+    assert len(issues) == 1, issues
+
+    # Validate duplicate parameters
+    assert issues[0]["severity"] == 1
+    assert issues[0]["type"] == "invalidPipelineParameter"
+    assert (
+        "One or more nodes reference pipeline parameter with name 'param1', "
+        "but multiple parameters with this name are defined." in issues[0]["message"]
+    )
+
+
+@pytest.mark.parametrize("catalog_instance", [KFP_COMPONENT_CACHE_INSTANCE], indirect=True)
+async def test_invalid_pipeline_parameter(validation_manager, load_pipeline, catalog_instance):
+    pipeline, response = load_pipeline("kf_with_parameters.pipeline")
+    referenced_params = [None, "", "2param", "class", "param1", "param4"]
+    invalid_parameter_instances = [
+        KfpPipelineParameter(name=None, description="", value="", default_value={}, required=False),
+        KfpPipelineParameter(name="", description="", value="", default_value={}, required=False),
+        KfpPipelineParameter(name="2param", description="", value="", default_value={}, required=False),
+        KfpPipelineParameter(name="class", description="", value="", default_value={}, required=False),
+        KfpPipelineParameter(name="param1", description="", value=None, default_value={}, required=True),
+        KfpPipelineParameter(name="param4", description="", value="", default_value={}, required=True),
+    ]
+
+    valid_parameter_instances = [
+        KfpPipelineParameter(name="param2", description="dup", value="value1", default_value={}, required=True),
+        KfpPipelineParameter(name="param2", description="dup", value="value2", default_value={}, required=True),
+        KfpPipelineParameter(name="param3", description="unref", value="value2", default_value={}, required=True),
+    ]
+
+    pipeline_parameters = invalid_parameter_instances + valid_parameter_instances
+    pipeline["pipelines"][0]["app_data"]["properties"][PIPELINE_PARAMETERS] = pipeline_parameters
+    pipeline["pipelines"][0]["nodes"][0]["app_data"]["component_parameters"]["pipeline_parameters"] = referenced_params
+
+    pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
+    await validation_manager._validate_pipeline_parameters(
+        pipeline_definition=pipeline_definition,
+        pipeline_runtime="kfp",
+        response=response,
+    )
+
+    issues = response.to_json().get("issues")
+    assert len(issues) == 6, issues
+
+    # Validate specific (referenced) parameter instances
+    assert issues[0]["severity"] == 1
+    assert issues[0]["type"] == "invalidPipelineParameter"
+    assert "Required parameter name was not specified." in issues[0]["message"]
+    assert issues[0]["data"]["value"].get("name") == ""
+    assert "'2param' is not a valid parameter name: name must be a Python variable name." in issues[1]["message"]
+    assert "'class' is not a valid parameter name: name cannot be a Python keyword." in issues[2]["message"]
+    assert "Parameter is marked as required but no value has been assigned." in issues[3]["message"]
+    assert "Parameter is marked as required but no value has been assigned." in issues[4]["message"]
+
+    # Validate unreferenced parameter
+    assert issues[5]["severity"] == 2
+    assert issues[5]["type"] == "invalidPipelineParameter"
+    assert "Pipeline defines parameter 'param3', but it is not referenced by any node." in issues[5]["message"]
+
+
+@pytest.mark.parametrize("catalog_instance", [KFP_COMPONENT_CACHE_INSTANCE], indirect=True)
+async def test_valid_pipeline_parameter(validation_manager, load_pipeline, catalog_instance):
+    pipeline, response = load_pipeline("kf_with_parameters.pipeline")
+    referenced_params = ["param1", "param2", "param3", "param4", "param5"]
+    valid_pipeline_parameters = [
+        KfpPipelineParameter(name="param1", description="", value="value1", default_value={}, required=True),
+        KfpPipelineParameter(
+            name="param2", description="", value=2, default_value={"type": "Integer", "value": 1}, required=True
+        ),
+        KfpPipelineParameter(name="param3", description="", value=False, default_value={"type": "Bool"}, required=True),
+        KfpPipelineParameter(
+            name="param4", description="", value=1.5, default_value={"type": "Float", "value": 0.5}, required=True
+        ),
+        KfpPipelineParameter(
+            name="param5",
+            description="",
+            value=1.5,
+            default_value={"type": "String", "value": "default"},
+            required=True,
+        ),
+    ]
+
+    pipeline["pipelines"][0]["app_data"]["properties"][PIPELINE_PARAMETERS] = valid_pipeline_parameters
+    pipeline["pipelines"][0]["nodes"][0]["app_data"]["component_parameters"]["pipeline_parameters"] = referenced_params
+
+    pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
+    await validation_manager._validate_pipeline_parameters(
+        pipeline_definition=pipeline_definition,
+        pipeline_runtime="kfp",
+        response=response,
+    )
+
+    issues = response.to_json().get("issues")
+    assert len(issues) == 0, issues
+
+
+@pytest.mark.parametrize("catalog_instance", [KFP_COMPONENT_CACHE_INSTANCE], indirect=True)
+async def test_invalid_node_property_pipeline_parameter(
+    validation_manager, load_pipeline, catalog_instance, monkeypatch
+):
+    pipeline, response = load_pipeline("kf_with_parameters.pipeline")
+    valid_pipeline_parameters = [
+        KfpPipelineParameter(
+            name="param1", description="", value=2, default_value={"type": "Integer", "value": 1}, required=True
+        ),
+    ]
+
+    pipeline["pipelines"][0]["app_data"]["properties"][PIPELINE_PARAMETERS] = valid_pipeline_parameters
+    pipeline["pipelines"][0]["nodes"][0]["app_data"]["component_parameters"]["pipeline_parameters"] = ["p2", "p3"]
+
+    pipeline_definition = PipelineDefinition(pipeline_definition=pipeline)
+
+    monkeypatch.setattr(
+        validation_manager, "_validate_filepath", lambda node_id, node_label, property_name, filename, response: True
+    )
+    await validation_manager._validate_node_properties(
+        pipeline_definition=pipeline_definition,
+        response=response,
+        pipeline_type="KUBEFLOW_PIPELINES",
+        pipeline_runtime="kfp",
+    )
+
+    issues = response.to_json().get("issues")
+    assert len(issues) == 5, issues
+
+    # Validate pipeline_parameters generic node property: referenced parameter doesn't exist
+    assert issues[0]["severity"] == 1
+    assert issues[0]["type"] == "invalidNodeProperty"
+    assert "Node depends on a pipeline parameter that is not defined." in issues[0]["message"]
+    assert issues[0]["data"]["value"] == "p2"
+    assert "Node depends on a pipeline parameter that is not defined." in issues[1]["message"]
+    assert issues[1]["data"]["value"] == "p3"
+
+    # Validate pipeline_parameters custom node property: referenced parameter doesn't exist
+    assert issues[3]["severity"] == 1
+    assert issues[3]["type"] == "invalidNodeProperty"
+    assert "Node depends on a pipeline parameter that is not defined." in issues[3]["message"]
+    assert issues[3]["data"]["value"] == "param2"
+    assert issues[3]["data"]["propertyName"] == "curl_options"
+
+    # Validate pipeline_parameters custom node property: referenced parameter type doesn't match property input type
+    assert issues[4]["severity"] == 2
+    assert issues[4]["type"] == "invalidNodeProperty"
+    assert "the type of the selected parameter does not match the type given" in issues[4]["message"]
+    assert issues[4]["data"]["propertyName"] == "curl_options"

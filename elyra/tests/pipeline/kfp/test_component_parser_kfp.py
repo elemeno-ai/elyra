@@ -299,7 +299,7 @@ def test_parse_kfp_component_file():
     )
     assert get_parameter_description("test_unusual_type_list") == "The test command description (type: An array)"
     assert get_parameter_description("test_unusual_type_string") == "The test command description (type: A string)"
-    assert get_parameter_description("test_unusual_type_notgiven") == "The test command description (type: string)"
+    assert get_parameter_description("test_unusual_type_notgiven") == "The test command description (type: String)"
 
 
 def test_parse_kfp_component_url():
@@ -376,10 +376,11 @@ def test_parse_kfp_component_file_no_inputs():
 
     properties_json = ComponentCache.to_canvas_properties(component)
 
-    # Properties JSON should only include the five parameters common to every
+    # Properties JSON should only include the six parameters common to every
     # component ('mounted_volumes', 'kubernetes_pod_annotations', 'kubernetes_pod_labels',
-    # 'kubernetes_tolerations', and 'disable_node_caching), and the output parameter for this component
-    num_common_params = 6
+    # 'kubernetes_tolerations', 'kubernetes_shared_mem_size', and 'disable_node_caching),
+    # and the output parameter for this component
+    num_common_params = 7
     properties_from_json = [
         prop
         for prop in properties_json["properties"]["component_parameters"]["properties"].keys()

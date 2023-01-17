@@ -22,7 +22,7 @@ limitations under the License.
 [![Downloads](https://pepy.tech/badge/elyra)](https://pepy.tech/project/elyra)
 [![Documentation Status](https://readthedocs.org/projects/elyra/badge/?version=latest)](https://elyra.readthedocs.io/en/latest/?badge=latest)
 [![GitHub](https://img.shields.io/badge/issue_tracking-github-blue.svg)](https://github.com/elyra-ai/elyra/issues)
-[![Homepage](https://img.shields.io/badge/homepage-elyra-fd9146.svg)](https://elyra-ai.github.io/website/)
+[![OpenSSF Best Practices](https://bestpractices.coreinfrastructure.org/projects/5761/badge)](https://bestpractices.coreinfrastructure.org/projects/5761)
 [![Gitter](https://badges.gitter.im/elyra-ai/community.svg)](https://gitter.im/elyra-ai/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 # Elyra
@@ -67,14 +67,14 @@ Note: You can also [build a container image from the `main` branch ("dev build")
 To run one of the container images, issue the following command, specifying a tag of your choice.
 
 ```
-docker run -it -p 8888:8888 elyra/elyra:3.12.0 jupyter lab --debug
+docker run -it -p 8888:8888 elyra/elyra:3.14.1 jupyter lab --debug
 ```
 
 To make a local directory containing your Notebooks (e.g. ${HOME}/opensource/jupyter-notebooks/) available in your
 docker container, you can use a mount command similar to the following:
 
 ```
-docker run -it -p 8888:8888 -v ${HOME}/opensource/jupyter-notebooks/:/home/jovyan/work -w /home/jovyan/work elyra/elyra:3.12.0 jupyter lab --debug
+docker run -it -p 8888:8888 -v ${HOME}/opensource/jupyter-notebooks/:/home/jovyan/work -w /home/jovyan/work elyra/elyra:3.14.1 jupyter lab --debug
 ```
 
 These should produce output similar to that below, where you can then find the URL to be used to access Elyra in your local browser.
@@ -249,21 +249,5 @@ If you are interested in helping make Elyra better, we encourage you to take a l
 [Development Workflow](https://elyra.readthedocs.io/en/latest/developer_guide/development-workflow.html)
 documentation, and invite you to attend our weekly dev community meetings.
 
-### Daily Dev Meetings
-Join us for our daily scrum (except Thursdays) to discuss development items you're working on or have questions about. Everyone is welcome and participation is optional.
-
-**When**: Every weekday except Thursdays at [8:30AM Pacific](https://www.thetimezoneconverter.com/?t=8%3A30%20am&tz=San%20Francisco&)
-
-**Where**: [Webex](https://ibm.webex.com/meet/akchin)
-
-**What**: [Current Milestone](https://github.com/elyra-ai/elyra/milestones)
-
-
-### Weekly Dev Community Meeting 
-Join us weekly to discuss Elyra development topics.  Everyone is welcome and participation is optional.
-
-**When**: Thursdays at [9AM Pacific](https://www.thetimezoneconverter.com/?t=9%3A00%20am&tz=San%20Francisco&)
-
-**Where**: [Webex](https://ibm.webex.com/meet/akchin)
-
-**What**: [Meeting Notes](https://hackmd.io/SgvSqrWWR2248mCw2BZ5gg?both)
+## Meetup with Us!
+Our daily and weekly community meeting schedule can be found [here](https://github.com/elyra-ai/community#daily-dev-meetings).

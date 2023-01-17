@@ -1,6 +1,6 @@
 {
   "name": "@elyra/code-snippet-extension",
-  "version": "3.12.0",
+  "version": "3.14.1",
   "description": "JupyterLab extension - Reusable code snippets for your Notebook and Python Scripts",
   "keywords": [
     "jupyter",
@@ -30,8 +30,8 @@
     "build:lib": "tsc",
     "build:labextension": "jupyter labextension build .",
     "build:labextension:dev": "jupyter labextension build --development True .",
-    "clean": "rimraf lib tsconfig.tsbuildinfo ../../dist/labextensions/@elyra/code-snippet-extension",
-    "lab:dev": "jupyter labextension develop --overwrite ../../dist/labextensions/@elyra/code-snippet-extension",
+    "clean": "rimraf lib tsconfig.tsbuildinfo ../../build/labextensions/@elyra/code-snippet-extension",
+    "lab:dev": "jupyter labextension develop --overwrite ../../build/labextensions/@elyra/code-snippet-extension",
     "dist": "npm pack .",
     "prepare": "npm run build",
     "watch": "run-p watch:src watch:labextension",
@@ -43,9 +43,9 @@
     "unlink:dev": "yarn unlink @jupyterlab/builder"
   },
   "dependencies": {
-    "@elyra/metadata-common": "3.12.0",
-    "@elyra/services": "3.12.0",
-    "@elyra/ui-components": "3.12.0",
+    "@elyra/metadata-common": "3.14.1",
+    "@elyra/services": "3.14.1",
+    "@elyra/ui-components": "3.14.1",
     "@jupyterlab/application": "^3.4.6",
     "@jupyterlab/apputils": "^3.4.6",
     "@jupyterlab/builder": "^3.4.6",
@@ -78,6 +78,6 @@
   },
   "jupyterlab": {
     "extension": true,
-    "outputDir": "../../dist/labextensions/@elyra/code-snippet-extension"
+    "outputDir": "../../build/labextensions/@elyra/code-snippet-extension"
   }
 }

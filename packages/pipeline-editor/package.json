@@ -1,6 +1,6 @@
 {
   "name": "@elyra/pipeline-editor-extension",
-  "version": "3.12.0",
+  "version": "3.14.1",
   "description": "JupyterLab extension - Visual editor to build Notebook pipelines",
   "keywords": [
     "jupyter",
@@ -31,8 +31,8 @@
     "build:lib": "tsc",
     "build:labextension": "jupyter labextension build .",
     "build:labextension:dev": "jupyter labextension build --development True .",
-    "clean": "rimraf lib tsconfig.tsbuildinfo ../../dist/labextensions/@elyra/metadata-extension",
-    "lab:dev": "jupyter labextension develop --overwrite ../../dist/labextensions/@elyra/metadata-extension",
+    "clean": "rimraf lib tsconfig.tsbuildinfo ../../build/labextensions/@elyra/metadata-extension",
+    "lab:dev": "jupyter labextension develop --overwrite ../../build/labextensions/@elyra/metadata-extension",
     "dist": "npm pack .",
     "prepare": "npm run build ",
     "test": "FORCE_COLOR=true jest",
@@ -45,11 +45,11 @@
     "unlink:dev": "yarn unlink @jupyterlab/builder"
   },
   "dependencies": {
-    "@elyra/metadata-common": "3.12.0",
-    "@elyra/pipeline-editor": "~1.10.0",
-    "@elyra/pipeline-services": "~1.10.0",
-    "@elyra/services": "3.12.0",
-    "@elyra/ui-components": "3.12.0",
+    "@elyra/metadata-common": "3.14.1",
+    "@elyra/pipeline-editor": "1.12.0",
+    "@elyra/pipeline-services": "1.12.0",
+    "@elyra/services": "3.14.1",
+    "@elyra/ui-components": "3.14.1",
     "@jupyterlab/application": "^3.4.6",
     "@jupyterlab/apputils": "^3.4.6",
     "@jupyterlab/builder": "^3.4.6",
@@ -71,7 +71,6 @@
     "@lumino/messaging": "^1.4.3",
     "@lumino/signaling": "^1.4.3",
     "@lumino/widgets": "^1.19.0",
-    "@material-ui/lab": "^4.0.0-alpha.18",
     "autoprefixer": "^9.6.0",
     "carbon-components": "~10.8.1",
     "json-loader": "^0.5.7",
@@ -80,6 +79,7 @@
     "react-intl": "^5.10.15",
     "react-redux": "^7.2.0",
     "react-scripts": "4.0.3",
+    "react-toastify": "^9.0.8",
     "swr": "^0.5.6",
     "uuid": "^3.4.0"
   },
@@ -108,6 +108,6 @@
   "jupyterlab": {
     "extension": true,
     "schemaDir": "schema",
-    "outputDir": "../../dist/labextensions/@elyra/pipeline-editor-extension"
+    "outputDir": "../../build/labextensions/@elyra/pipeline-editor-extension"
   }
 }

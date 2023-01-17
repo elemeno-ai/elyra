@@ -95,6 +95,7 @@ Each pipeline node is configured using properties. Default node properties are a
  - [Kubernetes tolerations](#kubernetes-tolerations)
  - [Kubernetes pod annotations](#kubernetes-pod-annotations)
  - [Kubernetes pod labels](#kubernetes-pod-labels)
+ - [Shared memory size](#shared-memory-size)
 
 **Default properties that apply only to generic nodes**
 
@@ -105,6 +106,28 @@ Each pipeline node is configured using properties. Default node properties are a
 **Default properties that apply only to custom nodes**
 
  - [Disable node caching](#disable-node-caching)
+
+#### Defining pipeline parameters
+
+Certain runtime-specific pipelines include support for pipeline parameters, which are configurable in the "Pipeline Editor Properties" panel.
+To access the panel click the "Open panel" button on the right side and select the "Pipeline Parameters" tab. The tab will only be present for those runtime platforms that support pipeline parameters.
+
+   ![Open the pipeline parameters panel](../images/user_guide/pipelines/open-pipeline-parameters.gif)
+
+Click `Add` to add a parameter to this pipeline. Each parameter has the following attributes:
+
+ - `Parameter Name`: The name of this parameter. This must be a unique identifier among all defined parameters. Hover over the tooltip (`?`) to display a description that may include runtime-specific constraints on the format of a parameter name.
+ - `Description`: Optional. A description for this parameter.
+ - `Type`: The type of this parameter. The options displayed in this dropdown will be unique to the pipeline runtime platform.
+ - `Default Value`: Optional. A default value for the parameter. This value can be overridden by providing a value for this parameter during pipeline submit or export.
+ - `Required`: Whether a value is required for this parameter during pipeline submit or export. The default is `False`.
+
+Next, configure node properties to use the defined parameters as desired. This process will differ for generic nodes and custom nodes. See the [`Node properties reference` subsection](#pipeline-parameters) or the [best practices guide](best-practices-file-based-nodes.html#pipeline-parameters) for information on configuring parameters for generic nodes.
+For custom nodes, a parameter can be selected to use as input to a node in the dropdown list for an input property. Only parameters that have the same type as the given node property can be selected to use as input for that property.
+
+   ![Select a pipeline parameter to use as a node input](../images/user_guide/pipelines/select-parameter.gif)
+
+On pipeline submit or export, all parameters that have been referenced by generic or custom nodes will be displayed in the pop-up dialog. Values can be assigned in this dialog box in order to override any defined default values. A value must be provided if a parameter has been marked as required, and the `OK` button will be disabled until a value is entered. See [Running pipelines](#running-a-pipeline-from-the-visual-pipeline-editor) or [Exporting pipelines](#exporting-a-pipeline-from-the-visual-pipeline-editor) for more information.
 
 #### Adding nodes
 
@@ -148,6 +171,7 @@ Nodes that are implemented using [generic components](pipeline-components.html#g
    - [Filename](#filename)
    - [Runtime image](#runtime-image)
    - [Resources (CPU, GPU, and RAM)](#resources-cpu-gpu-and-ram) 
+   - [Pipeline parameters](#pipeline-parameters)
    - [File dependencies](#file-dependencies)
    - [Include subdirectories](#file-dependencies)
    - [Environment variables](l#environment-variables)
@@ -157,6 +181,7 @@ Nodes that are implemented using [generic components](pipeline-components.html#g
    - [Kubernetes tolerations](#kubernetes-tolerations)
    - [Kubernetes pod annotations](#kubernetes-pod-annotations)
    - [Kubernetes pod labels](#kubernetes-pod-labels)
+   - [Shared memory size](#shared-memory-size)
 
 ##### Configuring custom nodes
 
@@ -167,6 +192,7 @@ Nodes that are implemented using [custom components](pipeline-components.html#cu
    - [Kubernetes pod annotations](#kubernetes-pod-annotations)
    - [Kubernetes pod labels](#kubernetes-pod-labels)
    - [Disable node caching](#disable-node-caching)
+   - [Shared memory size](#shared-memory-size)
 
 #### Defining dependencies between nodes
 
@@ -209,6 +235,8 @@ The following alphabetically sorted list identifies the node properties that are
    - Format: 
      - _Mount path_: the path where the PVC shall be mounted in the container. Example: `/mnt/datavol/`
      - _Persistent volume claim name_: a valid [Kubernetes resource name](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names) identifying a PVC that exists in the Kubernetes namespace where the pipeline nodes are executed. Example: `my-data-pvc`
+     - _Sub path_: relative path within the volume from which the container's volume should be mounted. Defaults to the volume's root. Example: `existing/path/in/volume`
+     - _Mount volume read-only_: whether to mount the volume in read-only mode
    - Data volumes are not mounted when the pipeline is executed locally.
 
 ##### Disable node caching
@@ -225,7 +253,7 @@ The following alphabetically sorted list identifies the node properties that are
    - Format:
      - _Environment variable_: name of the variable to be set. Example: `optimize`
      - _Value_: the value to be assigned to said variable. Example: `true`
-   - A set of default environment variables can also be set in the pipeline properties tab. If any default environment variables are set, the **Environment Variables** property in the node properties tab will include these variables and their values with a note that each is a pipeline default. Pipeline default environment variables are not editable from the node properties tab. Individual nodes can override a pipeline default value for a given variable by re-defining the variable/value pair in its own node properties. 
+   - A set of default environment variables can also be set in the pipeline properties tab. If any default environment variables are set, the **Environment Variables** property in the node properties tab will include these variables and their values with a note that each is a pipeline default. Pipeline default environment variables are not editable from the node properties tab. Individual nodes can override a pipeline default value for a given variable by re-defining the variable/value pair in its own node properties.
 
 ##### File Dependencies
    - This property applies only to generic components.
@@ -278,9 +306,16 @@ The following alphabetically sorted list identifies the node properties that are
    - A list of files generated by the notebook inside the image to be passed as inputs to the next step of the pipeline.  Specify one file, directory, or expression per line. Supported patterns are `*` and `?`.
    - Example: `data/*.csv`
 
+##### Pipeline Parameters
+   - This property applies only to generic components. Custom components can also use pipeline parameters, but the [method by which to configure them](#defining-pipeline-parameters) is different.
+   - A list of defined [pipeline parameters](#defining-pipeline-parameters) that should be passed to this generic component.
+   - Check the box next to a parameter name to indicate that it should be passed to this node. Parameters are passed to generic components by setting them as environment variables in the node container. Due to constraints imposed by environment variables, the parameter value will appear as a string when accessed in the generic node regardless of the `Type` that was selected for the parameter in the `Pipeline Parameters` tab.
+
 ##### Resources: CPU, GPU, and RAM
    - Resources that the notebook or script requires. RAM takes units of gigabytes (10<sup>9</sup> bytes).
-   - The values are ignored when the pipeline is executed locally. 
+   - Specify a custom Kubernetes GPU vendor, if desired. The default vendor is `nvidia.com/gpu`. See [this topic in the Kubernetes documentation](https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/) for more information.
+   - The values are ignored when the pipeline is executed locally.
+   - Example: `amd.com/gpu`
 
 ##### Runtime image
 
@@ -288,6 +323,13 @@ The following alphabetically sorted list identifies the node properties that are
    - The value is ignored when the pipeline is executed locally. 
    - A default runtime image can also be set in the pipeline properties tab. If a default image is set, the **Runtime Image** property in the node properties tab will indicate that a pipeline default is set. Individual nodes can override the pipeline default value. 
    - Example: `TensorFlow 2.0`
+
+##### Shared memory size
+
+Shared memory to be allocated on the pod where the component is executed. 
+   - Format: 
+     - _Memory size_: Custom shared memory size in gigabytes (10<sup>9</sup> bytes). The Kubernetes default is used if set to zero.
+   - Shared memory size is ignored when the pipeline is executed with the `local` runtime option.
  
 ### Running pipelines
 
@@ -300,16 +342,22 @@ To run a pipeline from the Visual Pipeline Editor:
 
    ![Open pipeline run wizard](../images/user_guide/pipelines/pipeline-editor-run.png)
 
-1. For generic pipelines select a runtime platform (local, Kubeflow Pipelines, Apache Airflow) and a runtime configuration for that platform. For runtime-specific  pipelines select a runtime configuration.
+2. For generic pipelines select a runtime platform (local, Kubeflow Pipelines, Apache Airflow) and a runtime configuration for that platform. For runtime-specific  pipelines select a runtime configuration.
 
    ![Configure pipeline run options](../images/user_guide/pipelines/configure-pipeline-run-options.png)
 
-1. Elyra does not include a pipeline run monitoring interface for pipelines:
+3. [Configure pipeline parameters](pipelines.html#defining-pipeline-parameters), if applicable. If any nodes reference parameters defined in the `Pipeline Parameters` panel, the value these parameters take can be customized here. If a parameter is marked as required and no default value is set, a value must be provided before the `OK` button is enabled.
+
+   ![Configure pipeline submit options with parameters](../images/user_guide/pipelines/configure-pipeline-submit-options-parameters.gif)
+
+4. Select `OK`
+
+5. Elyra does not include a pipeline run monitoring interface for pipelines:
    - For local/JupyterLab execution check the console output.
    - For Kubeflow Pipelines open the Central Dashboard link.
    - For Apache Airflow open the web GUI link.
 
-1. The pipeline run output artifacts are stored in the following locations:
+6. The pipeline run output artifacts are stored in the following locations:
    - For local/JupyterLab execution all artifacts are stored in the local file system.
    - For Kubeflow Pipelines and Apache Airflow output artifacts for generic components are stored in the runtime configuration's designated object storage bucket.   
 
@@ -345,26 +393,38 @@ Before you can export a pipeline on Kubeflow Pipelines or Apache Airflow you mus
 #### Exporting a pipeline from the Visual Pipeline Editor
 
 To export a pipeline from the Visual Pipeline Editor:
-1. Click `Export Pipeline` in the editor's tool bar.
+1. Click `Export Pipeline` in the editor's toolbar.
 
    ![Open pipeline run wizard](../images/user_guide/pipelines/pipeline-editor-export.png)
 
-1. For generic pipelines select a runtime platform (local, Kubeflow Pipelines, or Apache Airflow) and a runtime configuration for that platform. For runtime-specific pipelines select a runtime configuration.
+2. For generic pipelines select a runtime platform (local, Kubeflow Pipelines, or Apache Airflow) and a runtime configuration for that platform. For runtime-specific pipelines select a runtime configuration.
 
-1. Select an export format.
+3. Select an export format.
+
+4. Customize your file name using the Export Filename box
    
    ![Configure pipeline export options](../images/user_guide/pipelines/configure-pipeline-export-options.png)
 
-1. Import the exported pipeline file using the Kubeflow Central Dashboard or add it to the Git repository that Apache Airflow is monitoring.
+5. [Configure pipeline parameters](pipelines.html#defining-pipeline-parameters), if applicable. If any nodes reference parameters defined in the `Pipeline Parameters` panel, the value these parameters take can be customized here. If a parameter is marked as required and no default value is set, a value must be provided before the `OK` button is enabled.
+
+   ![Configure pipeline export options with parameters](../images/user_guide/pipelines/configure-pipeline-export-options-parameters.gif)
+
+6. Select `OK`
+
+7. Import the exported pipeline file using the Kubeflow Central Dashboard or add it to the Git repository that Apache Airflow is monitoring.
 
 
 #### Exporting a pipeline from the command line interface
 
-Use the [`elyra-pipeline`](command-line-interface.html#working-with-pipelines) `export` command to export a pipeline to a runtime-specific format, such as YAML for Kubeflow Pipelines or Python DAG for Apache Airflow.
+Use the [`elyra-pipeline`](command-line-interface.html#working-with-pipelines) `export` command to export a pipeline to a runtime-specific format:
+- Kubeflow Pipelines: [Python DSL](https://v1-5-branch.kubeflow.org/docs/components/pipelines/sdk/build-pipeline/) or YAML
+- Apache Airflow: Python DAG
 
 ```bash
 $ elyra-pipeline export a-notebook.pipeline --runtime-config kfp_dev_env --output /path/to/exported.yaml --overwrite
 ```
+
+By default, export produces YAML formatted output for Kubeflow Pipelines and <u>ONLY</u> Python DAGs for Apache Airflow. To choose a different format for Kubeflow Pipelines, specify the `--format` option. Supported values are `py` and `yaml` for Kubeflow Pipelines.
 
 To learn more about supported parameters, run
 ```bash
