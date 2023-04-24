@@ -57,20 +57,6 @@ RUN echo "$NB_USER:$NB_USER" | chpasswd && adduser $NB_USER sudo
 
 USER $NB_USER
 
-RUN conda remove --force -y terminado && \
-    python -m pip install --upgrade pip && \
-    python -m pip install --ignore-installed --upgrade setuptools pandas && \
-    npm config set scripts-prepend-node-path auto && \
-    npm config get prefix /home/jovyan/.npm-global && \
-    mkdir -p /home/jovyan/.npm-global && \
-    if [ "$TAG" == "dev" ] ; then \
-       npm install -g yarn && \
-       npm install -g npm && \
-       cd /tmp && git clone https://github.com/elyra-ai/elyra.git && \
-       cd /tmp/elyra && git checkout tags/v3.2.2 -b v3.2.2 && make UPGRADE_STRATEGY=eager install && rm -rf /tmp/elyra; \
-    else \
-        python3 -m pip install --quiet --no-cache-dir --use-deprecated=legacy-resolver elyra[all]=="$TAG" && \
-        jupyter lab build; \
-    fi
+COPY --chmod=0755 --chown=root:root start-elyra.sh /usr/local/bin/start-elyra.sh
 
 CMD ["/usr/local/bin/start-elyra.sh"]
