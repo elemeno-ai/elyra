@@ -30,6 +30,8 @@ COPY requirements.txt ${ELYRA_PACKAGE} ./
 
 USER root
 RUN chown jovyan:users ./requirements.txt ./"${ELYRA_PACKAGE}"
+RUN echo "${NB_USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/added-by-start-script
+
 USER jovyan
 
 RUN ls -al /home/jovyan
