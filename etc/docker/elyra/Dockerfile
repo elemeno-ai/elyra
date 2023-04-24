@@ -53,32 +53,8 @@ RUN apt update && apt install curl openssh-client -y
 
 RUN echo "$NB_USER:$NB_USER" | chpasswd && adduser $NB_USER sudo
 
-# update nodejs
-RUN curl -fsSL https://deb.nodesource.com/setup_16.x | bash - && \
-    apt-get install -y nodejs
-
-# install yarn
-RUN curl -sL https://dl.yarnpkg.com/debian/pubkey.gpg | gpg --dearmor | tee /usr/share/keyrings/yarnkey.gpg >/dev/null && \
-    echo "deb [signed-by=/usr/share/keyrings/yarnkey.gpg] https://dl.yarnpkg.com/debian stable main" | tee /etc/apt/sources.list.d/yarn.list && \
-    apt-get update && apt-get install yarn
-
 USER $NB_USER
 
-ADD elyra-src /tmp/elyra
-
-RUN conda remove --force -y terminado && \
-    python -m pip install --upgrade pip && \
-    python -m pip install --ignore-installed --upgrade setuptools pandas && \
-    npm config set scripts-prepend-node-path auto && \
-    npm config get prefix /home/jovyan/.npm-global && \
-    mkdir -p /home/jovyan/.npm-global && \
-    if [ "$TAG" == "dev" ] ; then \
-       npm install -g yarn && \
-       npm install -g npm && \
-       cd /tmp/elyra && make UPGRADE_STRATEGY=eager install && rm -rf /tmp/elyra; \
-    else \
-        python3 -m pip install --quiet --no-cache-dir --use-deprecated=legacy-resolver elyra[all]=="$TAG" && \
-        jupyter lab build; \
-    fi
+COPY --chmod=0755 --chown=root:root start-elyra.sh /usr/local/bin/start-elyra.sh
 
 CMD ["/usr/local/bin/start-elyra.sh"]
