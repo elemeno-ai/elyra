@@ -251,9 +251,6 @@ docs: docs-dependencies ## Build docs
 
 elyra-image: # Build Elyra stand-alone container image
 	@mkdir -p build/docker
-	cp -r . /tmp/elyra-src
-	cp -r /tmp/elyra-src build/docker/elyra-src
-	rm -rf /tmp/elyra-src
 	cp etc/docker/elyra/Dockerfile build/docker/Dockerfile
 	cp etc/docker/elyra/start-elyra.sh build/docker/start-elyra.sh
 	cp etc/docker/elyra/requirements.txt build/docker/requirements.txt
