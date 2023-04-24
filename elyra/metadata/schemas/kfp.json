@@ -10,7 +10,7 @@
   "uihints": {
     "title": "Kubeflow Pipelines runtimes",
     "icon": "elyra:runtimes",
-    "reference_url": "https://elyra.readthedocs.io/en/v3.14.1/user_guide/runtime-conf.html"
+    "reference_url": "https://elyra.readthedocs.io/en/v3.15.0/user_guide/runtime-conf.html"
   },
   "properties": {
     "schema_name": {
@@ -102,8 +102,8 @@
           }
         },
         "api_password": {
-          "title": "Kubeflow Pipelines API Endpoint Password",
-          "description": "Password for the specified username. This property is required for all authentication types, except NO_AUTHENTICATION and KUBERNETES_SERVICE_ACCOUNT_TOKEN.",
+          "title": "Kubeflow Pipelines API Endpoint Password Or Token",
+          "description": "Password or token to be used for authentication. This property is required for all authentication types, except NO_AUTHENTICATION and KUBERNETES_SERVICE_ACCOUNT_TOKEN.",
           "type": "string",
           "uihints": {
             "ui:field": "password",

@@ -21,7 +21,7 @@ This section describes the steps necessary to build Elyra in a development envir
 #### Requirements
 
 * [Python 3 Miniconda](https://docs.conda.io/en/latest/miniconda.html)
-* [Node.js 16+](https://nodejs.org/en/)
+* [Node.js 18+](https://nodejs.org/en/)
 * [Yarn](https://yarnpkg.com/lang/en/docs/install)
 * [GNU Make](https://www.gnu.org/software/make/)
 
@@ -150,8 +150,8 @@ The `clean-jupyterlab` removes your JupyterLab packages and completely deletes y
 Make sure to backup any important data in your environment before running the script.
 To clean your environment and install the latest JupyterLab:
 `etc/scripts/clean-jupyterlab.sh`
-To specify a JupyterLab version to be installed:
-`etc/scripts/clean-jupyterlab.sh --version 2.2.9`
+To specify a JupyterLab version `x.y.z` to be installed:
+`etc/scripts/clean-jupyterlab.sh --version x.y.z`
 
 #### Parallel Development with @elyra/pipeline-editor
 

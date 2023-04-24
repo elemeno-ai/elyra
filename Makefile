@@ -28,7 +28,9 @@
 SHELL:=/bin/bash
 
 # Container execs
-CONTAINER_EXEC=docker
+CONTAINER_EXEC?=docker
+# If using podman, use "--format docker" instead
+CONTAINER_OUTPUT_OPTION?=--output=type=docker
 
 # Python execs
 PYTHON?=python3
@@ -38,7 +40,7 @@ PYTHON_VERSION?=3.9
 CONDA_ACTIVATE = source $$(conda info --base)/etc/profile.d/conda.sh ; conda activate
 
 ELYRA_VERSION:=$$(grep __version__ elyra/_version.py | cut -d"\"" -f2)
-TAG:=3.14.1
+TAG:=3.15.0
 IMAGE_IS_LATEST=False
 ELYRA_IMAGE=elyra/elyra:$(TAG)
 ELYRA_IMAGE_LATEST=elyra/elyra:latest
@@ -210,15 +212,9 @@ release: yarn-install build-ui build-server ## Build wheel file for release
 elyra-image-env: ## Creates a conda env consisting of the dependencies used in images
 	conda env remove -y -n $(ELYRA_IMAGE_ENV)
 	conda create -y -n $(ELYRA_IMAGE_ENV) python=$(PYTHON_VERSION) --channel conda-forge
-	if [ "$(PYTHON_VERSION)" == "3.7" ]; then \
-		$(CONDA_ACTIVATE) $(ELYRA_IMAGE_ENV) && \
-		$(PYTHON_PIP) install -r etc/generic/requirements-elyra-py37.txt && \
-		conda deactivate; \
-	else \
-		$(CONDA_ACTIVATE) $(ELYRA_IMAGE_ENV) && \
-		$(PYTHON_PIP) install -r etc/generic/requirements-elyra.txt && \
-		conda deactivate; \
-	fi
+	$(CONDA_ACTIVATE) $(ELYRA_IMAGE_ENV) && \
+	$(PYTHON_PIP) install -r etc/generic/requirements-elyra.txt && \
+	conda deactivate;
 
 ## Test targets
 
@@ -262,7 +258,7 @@ elyra-image: # Build Elyra stand-alone container image
 	cp dist/elyra-$(ELYRA_VERSION)-py3-none-any.whl build/docker/
 	$(CONTAINER_EXEC) buildx build \
         --progress=plain \
-        --output=type=docker \
+        $(CONTAINER_OUTPUT_OPTION) \
 		--tag docker.io/$(ELYRA_IMAGE) \
 		--tag quay.io/$(ELYRA_IMAGE) \
 		--build-arg TAG=$(TAG) \
@@ -287,7 +283,7 @@ kf-notebook-image: # Build elyra image for use with Kubeflow Notebook Server
 	cp dist/elyra-$(ELYRA_VERSION)-py3-none-any.whl build/docker-kubeflow/
 	$(CONTAINER_EXEC) buildx build \
         --progress=plain \
-        --output=type=docker \
+        $(CONTAINER_OUTPUT_OPTION) \
 		--tag docker.io/$(KF_NOTEBOOK_IMAGE) \
 		--tag quay.io/$(KF_NOTEBOOK_IMAGE) \
 		--build-arg TAG=$(TAG) \
@@ -359,14 +355,7 @@ validate-runtime-image: # Validate that runtime image meets minimum criteria
 			IMAGE_PYTHON3_MINOR_VERSION=`docker run --rm $$image $$cmd --version | cut -d' ' -f2 | cut -d'.' -f2` ; \
 			if [[ $$IMAGE_PYTHON3_MINOR_VERSION -lt 8 ]]; then \
 				echo "WARNING: Container image $$image requires Python 3.8 or greater for latest generic component dependency installation" ; \
-				echo "=> Checking notebook execution..." ; \
-				docker run -v $$(pwd)/etc/generic:/opt/elyra/ --rm $$image /bin/bash -c "python3 -m pip install -r /opt/elyra/requirements-elyra-py37.txt && \
-							   curl https://raw.githubusercontent.com/nteract/papermill/main/papermill/tests/notebooks/simple_execute.ipynb --output simple_execute.ipynb && \
-							   python3 -m papermill simple_execute.ipynb output.ipynb > /dev/null" ; \
-				if [ $$? -ne 0 ]; then \
-					echo "ERROR: Container image $$image does not meet Python requirements criteria in requirements-elyra-py37.txt" ; \
-					fail=1; \
-				fi; \
+				fail=1; \
 			elif [[ $$IMAGE_PYTHON3_MINOR_VERSION -ge 8 ]]; then \
 				echo "=> Checking notebook execution..." ; \
 				docker run -v $$(pwd)/etc/generic:/opt/elyra/ --rm $$image /bin/bash -c "python3 -m pip install -r /opt/elyra/requirements-elyra.txt && \

@@ -48,14 +48,6 @@ The [Elyra Getting Started Guide](https://elyra.readthedocs.io/en/latest/getting
 
 ## Try Elyra
 
-#### Using Binder
-You can try out some of Elyra features using the [My Binder](https://mybinder.readthedocs.io/en/latest/) service.
-
-Click on a link below to try Elyra, on a sandbox environment, without having to install anything.
-
-- [![Launch latest stable version](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/elyra-ai/elyra/v3.10.0?urlpath=lab/tree/binder-demo) (Latest stable version - see the [releases page](https://github.com/elyra-ai/elyra/releases) for a new features summary)
-- [![Launch latest development version](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/elyra-ai/elyra/main?urlpath=lab/tree/binder-demo) (Development version - expect longer image load time due to just-in-time build)
-
 #### Using container images
 
 You can also try Elyra by running one of the container images from [Docker Hub](https://hub.docker.com/r/elyra/elyra/tags) or [quay.io](https://quay.io/repository/elyra/elyra?tab=tags):
@@ -67,14 +59,14 @@ Note: You can also [build a container image from the `main` branch ("dev build")
 To run one of the container images, issue the following command, specifying a tag of your choice.
 
 ```
-docker run -it -p 8888:8888 elyra/elyra:3.14.1 jupyter lab --debug
+docker run -it -p 8888:8888 elyra/elyra:3.15.0 jupyter lab --debug
 ```
 
 To make a local directory containing your Notebooks (e.g. ${HOME}/opensource/jupyter-notebooks/) available in your
 docker container, you can use a mount command similar to the following:
 
 ```
-docker run -it -p 8888:8888 -v ${HOME}/opensource/jupyter-notebooks/:/home/jovyan/work -w /home/jovyan/work elyra/elyra:3.14.1 jupyter lab --debug
+docker run -it -p 8888:8888 -v ${HOME}/opensource/jupyter-notebooks/:/home/jovyan/work -w /home/jovyan/work elyra/elyra:3.15.0 jupyter lab --debug
 ```
 
 These should produce output similar to that below, where you can then find the URL to be used to access Elyra in your local browser.
@@ -94,8 +86,8 @@ Refer to the [installation documentation](https://elyra.readthedocs.io/en/stable
 For detailed information refer to the [installation documentation](https://elyra.readthedocs.io/en/stable/getting_started/installation.html).
 
 ### Prerequisites :
-* [Node.js 16+](https://nodejs.org/en/)
-* [Python 3.7+](https://www.python.org/downloads/)
+* [Node.js 18+](https://nodejs.org/en/)
+* [Python 3.8+](https://www.python.org/downloads/)
 * [Miniconda](https://docs.conda.io/en/latest/miniconda.html) (optional)
 
 ### Install current release (for JupyterLab 3.x)
@@ -147,22 +139,6 @@ Installation instructions and JupyterLab support vary by release. Note that a Ju
 
     ```bash
     conda install -c conda-forge "elyra>=2.0.1" && jupyter lab build
-    ```
-</details>
-
-<details>
-  <summary>Elyra 1.0 < 2.0 (JupyterLab 2.x)</summary>
-
-  - Install from PyPI
-
-    ```bash
-    pip3 install --upgrade "elyra<2.0.0" && jupyter lab build
-    ```
-
-  - Install from conda-forge
-
-    ```bash
-    conda install -c conda-forge "elyra<2.0.0" && jupyter lab build
     ```
 </details>
 

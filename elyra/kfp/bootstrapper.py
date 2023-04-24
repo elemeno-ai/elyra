@@ -554,16 +554,20 @@ class OpUtil(object):
                         "editable package. This may conflict with the required version: "
                         f"{ver} . Skipping..."
                     )
-                elif "git+" in current_packages[package]:
+                    continue
+                try:
+                    version.Version(current_packages[package])
+                except version.InvalidVersion:  # current version is not PEP-440 compliant
                     logger.warning(
                         f"WARNING: Source package '{package}' found already installed from "
                         f"{current_packages[package]}. This may conflict with the required "
                         f"version: {ver} . Skipping..."
                     )
-                elif version.parse(ver) > version.parse(current_packages[package]):
+                    continue
+                if version.Version(ver) > version.Version(current_packages[package]):
                     logger.info(f"Updating {package} package from version {current_packages[package]} to {ver}...")
                     to_install_list.append(f"{package}=={ver}")
-                elif version.parse(ver) < version.parse(current_packages[package]):
+                elif version.Version(ver) < version.Version(current_packages[package]):
                     logger.info(
                         f"Newer {package} package with version {current_packages[package]} "
                         f"already installed. Skipping..."
@@ -589,9 +593,7 @@ class OpUtil(object):
     @classmethod
     def determine_elyra_requirements(cls) -> Any:
         if sys.version_info.major == 3:
-            if sys.version_info.minor == 7:
-                return "requirements-elyra-py37.txt"
-            elif sys.version_info.minor in [8, 9, 10, 11]:
+            if sys.version_info.minor in [8, 9, 10, 11]:
                 return "requirements-elyra.txt"
         logger.error(
             f"This version of Python '{sys.version_info.major}.{sys.version_info.minor}' "

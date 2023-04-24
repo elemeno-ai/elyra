@@ -2,6 +2,60 @@
 
 A summary of new feature highlights is located on the [GitHub release page](https://github.com/elyra-ai/elyra/releases).
 
+## Release 3.15.0 - 03/28/2023
+
+
+## Release 3.15.0rc0 - 03/28/2023
+
+- Add support for static bearer token authentication for KFP - [#3124](https://github.com/elyra-ai/elyra/pull/3124)
+- Bump @sideway/formula from 3.0.0 to 3.0.1 - [#3127](https://github.com/elyra-ai/elyra/pull/3127)
+- Determine which kernel to use prior to notebook execution - [#3135](https://github.com/elyra-ai/elyra/pull/3135)
+- Bump webpack from 5.74.0 to 5.76.0 - [#3128](https://github.com/elyra-ai/elyra/pull/3128)
+- Lower floor for kfp-tekton dependency - [#3125](https://github.com/elyra-ai/elyra/pull/3125)
+- Update community resources - [#3123](https://github.com/elyra-ai/elyra/pull/3123)
+- Filter available runtimes based on configuration setting - [#3114](https://github.com/elyra-ai/elyra/pull/3114)
+- Require Node.js 18+ in preparation for version 16 EOL - [#3118](https://github.com/elyra-ai/elyra/pull/3118)
+- Hide binder links and references - [#3119](https://github.com/elyra-ai/elyra/pull/3119)
+- Fix test artifact output location bugs - [#3117](https://github.com/elyra-ai/elyra/pull/3117)
+
+## Release 3.14.3 - 02/21/2023
+
+- Bump kfp-tekton to 1.6.2 to pick up kfp 1.8.19 - [#3113](https://github.com/elyra-ai/elyra/pull/3113)
+- Remove references to Jupyterlab 1.x and 2.x from documentation - [#3112](https://github.com/elyra-ai/elyra/pull/3112)
+- Bump ipython from 8.3.0 to 8.10.0 in /etc/generic - [#3108](https://github.com/elyra-ai/elyra/pull/3108)
+- Skip version check for incompatible version strings in `bootstrapper.py` - [#3106](https://github.com/elyra-ai/elyra/pull/3106)
+- Ensure env stanza is an empty dict if no seed value is given - [#3103](https://github.com/elyra-ai/elyra/pull/3103)
+- Remove references to Python 3.7 - [#3101](https://github.com/elyra-ai/elyra/pull/3101)
+- Fix KFP code generation issues for pipeline parameters - [#3093](https://github.com/elyra-ai/elyra/pull/3093)
+- Bump http-cache-semantics from 4.1.0 to 4.1.1 - [#3099](https://github.com/elyra-ai/elyra/pull/3099)
+- Remove Python v3.7 from github workflow test matrix - [#3098](https://github.com/elyra-ai/elyra/pull/3098)
+- Update function format to conform to black v23 linting - [#3097](https://github.com/elyra-ai/elyra/pull/3097)
+- Update github workflows to use v3/v4 actions - [#3095](https://github.com/elyra-ai/elyra/pull/3095)
+- Update supported kubeflow version info in docs - [#3094](https://github.com/elyra-ai/elyra/pull/3094)
+
+## Release 3.14.2 - 01/26/2023
+
+
+## Release 3.14.2rc1 - 01/26/2023
+
+- Fix int parameter default zero bug - [#3090](https://github.com/elyra-ai/elyra/pull/3090)
+
+## Release 3.14.2rc0 - 01/24/2023
+
+- Update release script for linux environments - [#3086](https://github.com/elyra-ai/elyra/pull/3086)
+- Fix oneOf file selection - [#3065](https://github.com/elyra-ai/elyra/pull/3065)
+- Support using podman as container runtime - [#3082](https://github.com/elyra-ai/elyra/pull/3082)
+- Repackage data files into elyra-server distribution - [#3081](https://github.com/elyra-ai/elyra/pull/3081)
+- Fix negative parameter behavior - [#3062](https://github.com/elyra-ai/elyra/pull/3062)
+- Fix write_error function implementation in handlers - [#3080](https://github.com/elyra-ai/elyra/pull/3080)
+- Update factory image tags to use SHA256 hashes - [#3075](https://github.com/elyra-ai/elyra/pull/3075)
+- Bump json5 from 1.0.1 to 1.0.2 - [#3068](https://github.com/elyra-ai/elyra/pull/3068)
+- Update package to include all-optional-dependencies subpackage - [#3067](https://github.com/elyra-ai/elyra/pull/3067)
+- Decrease jupyter_core floor, cap nbclient for 3.7 - [#3071](https://github.com/elyra-ai/elyra/pull/3071)
+- Disable test due to inconsistent setup in CI - [#3073](https://github.com/elyra-ai/elyra/pull/3073)
+- Remove unnecessary caps in dependencies for kfp-related packages - [#3076](https://github.com/elyra-ai/elyra/pull/3076)
+- Add link to new blog post to documentation - [#3064](https://github.com/elyra-ai/elyra/pull/3064)
+
 ## Release 3.14.1 - 12/14/2022
 
 - Remove jupyter-server-terminal cap and fix release script - [#3057](https://github.com/elyra-ai/elyra/pull/3057)

@@ -574,7 +574,7 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
         template_env.filters["string_delimiter_safe"] = lambda string: re.sub('"', '\\"', string)
         # Add filter that converts a value to a python variable value (e.g. puts quotes around strings)
         template_env.filters["param_val_to_python_var"] = (
-            lambda p: json.dumps(p.value) if p.input_type.base_type == "String" else p.value
+            lambda p: "None" if p.value is None else (f'"{p.value}"' if p.input_type.base_type == "String" else p.value)
         )
         template = template_env.get_template("python_dsl_template.jinja2")
 
@@ -731,9 +731,10 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
                 pipeline.pipeline_properties.get(pipeline_constants.COS_OBJECT_PREFIX), pipeline_instance_id
             )
             # - load the generic component definition template
-            generic_component_template = Environment(
-                loader=PackageLoader("elyra", "templates/kubeflow/v1")
-            ).get_template("generic_component_definition_template.jinja2")
+            template_env = Environment(loader=PackageLoader("elyra", "templates/kubeflow/v1"))
+            generic_component_template = template_env.get_template("generic_component_definition_template.jinja2")
+            # Add filter that escapes the " character in strings
+            template_env.filters["string_delimiter_safe"] = lambda string: re.sub('"', '\\\\\\\\"', string)
             # Determine whether we are executing in a CRI-O runtime environment
             is_crio_runtime = os.getenv("CRIO_RUNTIME", "False").lower() == "true"
 
@@ -1084,11 +1085,6 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
             f"https://raw.githubusercontent.com/{elyra_github_org}/"
             f"elyra/{elyra_github_branch}/etc/generic/requirements-elyra.txt",
         )
-        elyra_requirements_url_py37 = os.getenv(
-            "elyra_requirements_url_py37",
-            f"https://raw.githubusercontent.com/{elyra_github_org}/"
-            f"elyra/{elyra_github_branch}/etc/generic/requirements-elyra-py37.txt",
-        )
 
         if is_crio_runtime:
             container_work_dir = CRIO_VOL_WORKDIR_PATH
@@ -1110,8 +1106,6 @@ class KfpPipelineProcessor(RuntimePipelineProcessor):
             f"curl {common_curl_options} -L {elyra_bootstrap_script_url} --output bootstrapper.py",
             f"echo 'Downloading {elyra_requirements_url}' && "
             f"curl {common_curl_options} -L {elyra_requirements_url} --output requirements-elyra.txt",
-            f"echo 'Downloading {elyra_requirements_url_py37}' && "
-            f"curl {common_curl_options} -L {elyra_requirements_url_py37} --output requirements-elyra-py37.txt",
         ]
 
         if is_crio_runtime:

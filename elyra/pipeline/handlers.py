@@ -35,7 +35,7 @@ from elyra.pipeline.parser import PipelineParser
 from elyra.pipeline.pipeline_constants import PIPELINE_PARAMETERS
 from elyra.pipeline.pipeline_definition import PipelineDefinition
 from elyra.pipeline.processor import PipelineProcessorManager
-from elyra.pipeline.processor import PipelineProcessorRegistry
+from elyra.pipeline.registry import PipelineProcessorRegistry
 from elyra.pipeline.runtime_type import RuntimeProcessorType
 from elyra.pipeline.runtime_type import RuntimeTypeResources
 from elyra.pipeline.validation import PipelineValidationManager
@@ -128,7 +128,7 @@ class PipelineExportHandler(HttpErrorMixin, APIHandler):
         await self.finish(json_msg)
 
     def write_error(self, status_code, **kwargs):
-        HttpErrorMixin().write_error(status_code, **kwargs)
+        HttpErrorMixin.write_error(self, status_code, **kwargs)
 
 
 class PipelineSchedulerHandler(HttpErrorMixin, APIHandler):
@@ -175,7 +175,7 @@ class PipelineSchedulerHandler(HttpErrorMixin, APIHandler):
         await self.finish(json_msg)
 
     def write_error(self, status_code, **kwargs):
-        HttpErrorMixin().write_error(status_code, **kwargs)
+        HttpErrorMixin.write_error(self, status_code, **kwargs)
 
 
 class PipelineComponentHandler(HttpErrorMixin, APIHandler):
@@ -202,7 +202,7 @@ class PipelineComponentHandler(HttpErrorMixin, APIHandler):
         await self.finish(palette_json)
 
     def write_error(self, status_code, **kwargs):
-        HttpErrorMixin().write_error(status_code, **kwargs)
+        HttpErrorMixin.write_error(self, status_code, **kwargs)
 
 
 class PipelinePropertiesHandler(HttpErrorMixin, APIHandler):
@@ -224,7 +224,7 @@ class PipelinePropertiesHandler(HttpErrorMixin, APIHandler):
         await self.finish(pipeline_properties_json)
 
     def write_error(self, status_code, **kwargs):
-        HttpErrorMixin().write_error(status_code, **kwargs)
+        HttpErrorMixin.write_error(self, status_code, **kwargs)
 
 
 class PipelineParametersHandler(HttpErrorMixin, APIHandler):
@@ -310,7 +310,7 @@ class PipelineComponentPropertiesHandler(HttpErrorMixin, APIHandler):
         await self.finish(json_response)
 
     def write_error(self, status_code, **kwargs):
-        HttpErrorMixin().write_error(status_code, **kwargs)
+        HttpErrorMixin.write_error(self, status_code, **kwargs)
 
 
 class PipelineValidationHandler(HttpErrorMixin, APIHandler):
@@ -337,7 +337,7 @@ class PipelineValidationHandler(HttpErrorMixin, APIHandler):
         await self.finish(json_msg)
 
     def write_error(self, status_code, **kwargs):
-        HttpErrorMixin().write_error(status_code, **kwargs)
+        HttpErrorMixin.write_error(self, status_code, **kwargs)
 
 
 class PipelineRuntimeTypesHandler(HttpErrorMixin, APIHandler):
@@ -357,7 +357,7 @@ class PipelineRuntimeTypesHandler(HttpErrorMixin, APIHandler):
         await self.finish({"runtime_types": runtime_types})
 
     def write_error(self, status_code, **kwargs):
-        HttpErrorMixin().write_error(status_code, **kwargs)
+        HttpErrorMixin.write_error(self, status_code, **kwargs)
 
 
 class ComponentCacheHandler(HttpErrorMixin, APIHandler):
@@ -365,7 +365,6 @@ class ComponentCacheHandler(HttpErrorMixin, APIHandler):
 
     @web.authenticated
     async def put(self):
-
         # Validate the body
         cache_refresh = self.get_json_body()
         if "action" not in cache_refresh or cache_refresh["action"] != "refresh":
@@ -381,7 +380,7 @@ class ComponentCacheHandler(HttpErrorMixin, APIHandler):
         await self.finish()
 
     def write_error(self, status_code, **kwargs):
-        HttpErrorMixin().write_error(status_code, **kwargs)
+        HttpErrorMixin.write_error(self, status_code, **kwargs)
 
 
 class ComponentCacheCatalogHandler(HttpErrorMixin, APIHandler):
@@ -389,7 +388,6 @@ class ComponentCacheCatalogHandler(HttpErrorMixin, APIHandler):
 
     @web.authenticated
     async def put(self, catalog):
-
         # Validate the body
         cache_refresh = self.get_json_body()
         if "action" not in cache_refresh or cache_refresh["action"] != "refresh":
@@ -410,4 +408,4 @@ class ComponentCacheCatalogHandler(HttpErrorMixin, APIHandler):
         await self.finish()
 
     def write_error(self, status_code, **kwargs):
-        HttpErrorMixin().write_error(status_code, **kwargs)
+        HttpErrorMixin.write_error(self, status_code, **kwargs)

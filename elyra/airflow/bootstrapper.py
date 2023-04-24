@@ -16,6 +16,7 @@
 from abc import ABC
 from abc import abstractmethod
 import glob
+import json
 import logging
 import os
 import subprocess
@@ -218,10 +219,14 @@ class NotebookFileOp(FileOpBase):
         try:
             OpUtil.log_operation_info(f"executing notebook using 'papermill {notebook} {notebook_output}'")
             t0 = time.time()
+
+            # Include kernel selection in execution time
+            kernel_name = NotebookFileOp.find_best_kernel(notebook)
+
             # Really hate to do this but have to invoke Papermill via library as workaround
             import papermill
 
-            papermill.execute_notebook(notebook, notebook_output)
+            papermill.execute_notebook(notebook, notebook_output, kernel_name=kernel_name)
             duration = time.time() - t0
             OpUtil.log_operation_info("notebook execution completed", duration)
 
@@ -261,6 +266,52 @@ class NotebookFileOp(FileOpBase):
         duration = time.time() - t0
         OpUtil.log_operation_info(f"{notebook_file} converted to {html_file}", duration)
         return html_file
+
+    @staticmethod
+    def find_best_kernel(notebook_file: str) -> str:
+        """Determines the best kernel to use via the following algorithm:
+
+        1. Loads notebook and gets kernel_name and kernel_language from NB metadata.
+        2. Gets the list of configured kernels using KernelSpecManager.
+        3. If notebook kernel_name is in list, use that, else
+        4. If not found, load each configured kernel.json file and find a language match.
+        5. On first match, log info message regarding the switch and use that kernel.
+        6. If no language match is found, revert to notebook kernel and log warning message.
+        """
+        from jupyter_client.kernelspec import KernelSpecManager
+        import nbformat
+
+        nb = nbformat.read(notebook_file, 4)
+
+        nb_kspec = nb.metadata.kernelspec
+        nb_kernel_name = nb_kspec.get("name")
+        nb_kernel_lang = nb_kspec.get("language")
+
+        kernel_specs = KernelSpecManager().find_kernel_specs()
+
+        # see if we have a direct match...
+        if nb_kernel_name in kernel_specs.keys():
+            return nb_kernel_name
+
+        # no match found for kernel, try matching language...
+        for name, file in kernel_specs.items():
+            # load file (JSON) and pick out language, if match, use first found
+            with open(os.path.join(file, "kernel.json")) as f:
+                kspec = json.load(f)
+                if kspec.get("language").lower() == nb_kernel_lang.lower():
+                    matched_kernel = os.path.basename(file)
+                    logger.info(
+                        f"Matched kernel by language ({nb_kernel_lang}), using kernel "
+                        f"'{matched_kernel}' instead of the missing kernel '{nb_kernel_name}'."
+                    )
+                    return matched_kernel
+
+        # no match found for language, return notebook kernel and let execution fail
+        logger.warning(
+            f"Reverting back to missing notebook kernel '{nb_kernel_name}' since no "
+            f"language match ({nb_kernel_lang}) was found in current kernel specifications."
+        )
+        return nb_kernel_name
 
 
 class PythonFileOp(FileOpBase):
@@ -343,21 +394,20 @@ class OpUtil(object):
                         "editable package. This may conflict with the required version: "
                         f"{ver} . Skipping..."
                     )
-                elif "git+" in current_packages[package]:
+                    continue
+                try:
+                    version.Version(current_packages[package])
+                except version.InvalidVersion:  # current version is not PEP-440 compliant
                     logger.warning(
                         f"WARNING: Source package '{package}' found already installed from "
                         f"{current_packages[package]}. This may conflict with the required "
                         f"version: {ver} . Skipping..."
                     )
-                elif isinstance(version.parse(current_packages[package]), version.LegacyVersion):
-                    logger.warning(
-                        f"WARNING: Package '{package}' found with unsupported Legacy version "
-                        f"scheme {current_packages[package]} already installed. Skipping..."
-                    )
-                elif version.parse(ver) > version.parse(current_packages[package]):
+                    continue
+                if version.Version(ver) > version.Version(current_packages[package]):
                     logger.info(f"Updating {package} package from version {current_packages[package]} to {ver}...")
                     to_install_list.append(f"{package}=={ver}")
-                elif version.parse(ver) < version.parse(current_packages[package]):
+                elif version.Version(ver) < version.Version(current_packages[package]):
                     logger.info(
                         f"Newer {package} package with version {current_packages[package]} "
                         f"already installed. Skipping..."
@@ -376,9 +426,7 @@ class OpUtil(object):
     @classmethod
     def determine_elyra_requirements(cls) -> Any:
         if sys.version_info.major == 3:
-            if sys.version_info.minor == 7:
-                return "requirements-elyra-py37.txt"
-            elif sys.version_info.minor in [8, 9, 10, 11]:
+            if sys.version_info.minor in [8, 9, 10, 11]:
                 return "requirements-elyra.txt"
         logger.error(
             f"This version of Python '{sys.version_info.major}.{sys.version_info.minor}' "
