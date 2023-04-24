@@ -64,7 +64,7 @@ RUN curl -sL https://dl.yarnpkg.com/debian/pubkey.gpg | gpg --dearmor | tee /usr
 
 USER $NB_USER
 
-ADD elyra /tmp/elyra
+ADD elyra-src /tmp/elyra
 
 RUN conda remove --force -y terminado && \
     python -m pip install --upgrade pip && \
